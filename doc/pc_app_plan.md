@@ -71,7 +71,7 @@ Recommend a **Windows sign-in tray/background app**, not a Windows Service runni
 
 | Phase | Description | Primary Owner | Support | Status |
 |---|---|---|---|---|
-| 11.1 | Solution/project scaffold, Core Sqlite schema + models matching device exactly. | PC Application Lead | Data & Sync Protocol Owner | Not started |
+| 11.1 | Solution/project scaffold, Core Sqlite schema + models matching device exactly. | PC Application Lead | Data & Sync Protocol Owner | Done — GeroImperium.sln (Core/App/Service/Tests, net10.0-windows) scaffolded; Core/Data/Schema.cs creates the 5 device tables column-identical to pc_app_integration.md plus app-only additions (BackgroundColorArgb, KeyActions.ActionType/LaunchPath/ScriptId, Scripts table); Core/Models POCOs mirror each table; SchemaTests.cs (8 tests) verifies table set, device-read column names, and FK enforcement -- all passing |
 | 11.2 | Image pipeline (`Rgb565Converter`): png/jpeg/svg -> composite -> B5G6R5 LE, unit-tested against known pixels. | PC Application Lead | — | Not started |
 | 11.3 | Protocol client: discovery, bulk `S`/`D`/`F`, incremental `I`/`J`/`T`, CRC32. | PC Application Lead | Data & Sync Protocol Owner | Not started |
 | 11.4 | WPF shell + Applications/Key groups editor pages, dark/light theme. | PC Application Lead | — | Not started |
