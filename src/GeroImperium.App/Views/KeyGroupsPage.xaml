@@ -1,0 +1,89 @@
+<UserControl x:Class="GeroImperium.App.Views.KeyGroupsPage"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:GeroImperium.App.ViewModels"
+             xmlns:controls="clr-namespace:GeroImperium.App.Views.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:KeyGroupsViewModel}"
+             mc:Ignorable="d">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,12">
+            <TextBlock Text="Application:" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox Width="220" ItemsSource="{Binding Applications}" DisplayMemberPath="Name"
+                      SelectedItem="{Binding SelectedApplication}" />
+        </StackPanel>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <DockPanel Grid.Column="0">
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                    <ui:Button Content="+ Add" Command="{Binding AddKeyGroupCommand}" Margin="0,0,4,0" />
+                    <ui:Button Content="Delete" Appearance="Danger" Command="{Binding DeleteKeyGroupCommand}" />
+                </StackPanel>
+                <ListBox ItemsSource="{Binding KeyGroups}" SelectedItem="{Binding SelectedKeyGroup}" DisplayMemberPath="Name" />
+            </DockPanel>
+
+            <TextBlock Grid.Column="2" Text="No key group selected" FontStyle="Italic" Opacity="0.6"
+                       VerticalAlignment="Top" HorizontalAlignment="Left"
+                       Visibility="{Binding SelectedKeyGroup, Converter={StaticResource NullToVisibleConverter}}" />
+
+            <ItemsControl Grid.Column="2" ItemsSource="{Binding KeySlots}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="3" Rows="2" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:KeySlotViewModel}">
+                        <Border Margin="4" Padding="10" BorderBrush="Gray" BorderThickness="1" CornerRadius="4">
+                            <StackPanel>
+                                <TextBlock FontWeight="Bold">
+                                    <Run Text="Key " /><Run Text="{Binding Position, Mode=OneWay}" />
+                                </TextBlock>
+
+                                <Image Source="{Binding ImagePreview}" Width="64" Height="64" HorizontalAlignment="Left" Margin="0,6,0,6" />
+                                <ui:Button Content="Pick Image..." HorizontalAlignment="Left"
+                                           Command="{Binding DataContext.PickImageCommand, ElementName=Root}"
+                                           CommandParameter="{Binding}" />
+
+                                <TextBlock Text="Background" Margin="0,10,0,2" Opacity="0.7" />
+                                <controls:ColorSwatchPicker SelectedColor="{Binding BackgroundColor}" />
+
+                                <TextBlock Text="Action" Margin="0,10,0,2" Opacity="0.7" />
+                                <ComboBox ItemsSource="{Binding ActionTypeOptions}" SelectedItem="{Binding ActionType}" />
+
+                                <TextBlock Text="Requires firmware update + Service running (not yet available)"
+                                           Foreground="Orange" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
+                                           Visibility="{Binding IsUnsupportedActionType, Converter={StaticResource BoolToVisibleConverter}}" />
+
+                                <StackPanel Visibility="{Binding ActionType, Converter={StaticResource EnumEqualsVisibilityConverter}, ConverterParameter=Shortcut}">
+                                    <TextBlock Text="Shortcut key" Margin="0,10,0,2" Opacity="0.7" />
+                                    <ui:TextBox Text="{Binding ShortcutToken, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="e.g. F5" />
+                                    <WrapPanel Margin="0,6,0,0">
+                                        <CheckBox Content="Ctrl" IsChecked="{Binding CtrlModifier}" Margin="0,0,10,0" />
+                                        <CheckBox Content="Shift" IsChecked="{Binding ShiftModifier}" Margin="0,0,10,0" />
+                                        <CheckBox Content="Alt" IsChecked="{Binding AltModifier}" Margin="0,0,10,0" />
+                                        <CheckBox Content="Win" IsChecked="{Binding WinModifier}" />
+                                    </WrapPanel>
+                                </StackPanel>
+
+                                <StackPanel Visibility="{Binding ActionType, Converter={StaticResource EnumEqualsVisibilityConverter}, ConverterParameter=LaunchApp}">
+                                    <TextBlock Text="Launch path" Margin="0,10,0,2" Opacity="0.7" />
+                                    <ui:TextBox Text="{Binding LaunchPath, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="C:\path\to\app.exe" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+    </DockPanel>
+</UserControl>

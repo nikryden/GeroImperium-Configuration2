@@ -1,9 +1,20 @@
-﻿<Application x:Class="GeroImperium.App.App"
+<Application x:Class="GeroImperium.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:GeroImperium.App"
-             StartupUri="Views/MainWindow.xaml">
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:converters="clr-namespace:GeroImperium.App.Converters"
+             xmlns:local="clr-namespace:GeroImperium.App">
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <converters:NullToVisibleConverter x:Key="NullToVisibleConverter" />
+            <converters:NotNullToVisibleConverter x:Key="NotNullToVisibleConverter" />
+            <converters:EnumEqualsVisibilityConverter x:Key="EnumEqualsVisibilityConverter" />
+            <converters:BoolToVisibleConverter x:Key="BoolToVisibleConverter" />
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

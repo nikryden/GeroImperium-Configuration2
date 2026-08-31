@@ -7,18 +7,39 @@ namespace GeroImperium.Core.Imaging;
 /// <summary>
 /// Single entry point every image-consuming feature (key editor, app editor, bulk export, incremental I/J
 /// upload) should call: decode (PNG/JPEG via ImageSharp, SVG via SvgRasterizer) -> composite onto the chosen
-/// background color -> convert to the device's wire format.
+/// background color -> convert to the device's wire format and/or a portable preview.
 /// </summary>
 public static class ImagePipeline
 {
     public static byte[] ConvertToRgb565(byte[] imageBytes, Rgba32 backgroundColor)
     {
+        using var composed = DecodeAndCompose(imageBytes, backgroundColor);
+        return Rgb565Converter.Convert(composed);
+    }
+
+    /// <summary>
+    /// Produces the two byte blobs the App's Applications/GeroImperiumKeys.ImageData(Rgb565) columns store:
+    /// a composited 128x128 PNG (universally displayable, including for SVG sources WPF can't decode
+    /// natively -- this is the App's own preview format, not something pushed to the device) and the
+    /// matching device wire blob, both derived from the same composite so they never drift apart.
+    /// </summary>
+    public static (byte[] PreviewPng, byte[] Rgb565) ConvertToPreviewAndRgb565(byte[] imageBytes, Rgba32 backgroundColor)
+    {
+        using var composed = DecodeAndCompose(imageBytes, backgroundColor);
+
+        using var pngStream = new MemoryStream();
+        composed.SaveAsPng(pngStream);
+
+        return (pngStream.ToArray(), Rgb565Converter.Convert(composed));
+    }
+
+    private static Image<Rgba32> DecodeAndCompose(byte[] imageBytes, Rgba32 backgroundColor)
+    {
         using var source = IsSvg(imageBytes)
             ? SvgRasterizer.Rasterize(imageBytes)
             : Image.Load<Rgba32>(imageBytes);
 
-        using var composed = ImageCompositor.ComposeOnBackground(source, backgroundColor);
-        return Rgb565Converter.Convert(composed);
+        return ImageCompositor.ComposeOnBackground(source, backgroundColor);
     }
 
     private static bool IsSvg(byte[] bytes)

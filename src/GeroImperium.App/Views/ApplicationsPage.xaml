@@ -1,0 +1,50 @@
+<UserControl x:Class="GeroImperium.App.Views.ApplicationsPage"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:GeroImperium.App.ViewModels"
+             xmlns:controls="clr-namespace:GeroImperium.App.Views.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:ApplicationsViewModel}"
+             mc:Ignorable="d">
+    <Grid Margin="16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="260" />
+            <ColumnDefinition Width="16" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <DockPanel Grid.Column="0">
+            <ui:Button DockPanel.Dock="Top" Content="+ Add Application" Command="{Binding AddApplicationCommand}"
+                       HorizontalAlignment="Stretch" Margin="0,0,0,8" />
+            <ListBox ItemsSource="{Binding Applications}" SelectedItem="{Binding SelectedApplication}"
+                     DisplayMemberPath="Name" />
+        </DockPanel>
+
+        <Grid Grid.Column="2">
+            <TextBlock Text="No application selected" FontStyle="Italic" Opacity="0.6"
+                       Visibility="{Binding SelectedApplication, Converter={StaticResource NullToVisibleConverter}}" />
+
+            <StackPanel DataContext="{Binding SelectedApplication}"
+                        Visibility="{Binding Path=DataContext.SelectedApplication, ElementName=Root, Converter={StaticResource NotNullToVisibleConverter}}">
+                <Image Source="{Binding ImagePreview}" Width="128" Height="128" HorizontalAlignment="Left" Stretch="Uniform" />
+                <ui:Button Content="Pick Image..." Margin="0,8,0,0" HorizontalAlignment="Left"
+                           Command="{Binding DataContext.PickImageCommand, ElementName=Root}"
+                           CommandParameter="{Binding}" />
+
+                <TextBlock Text="Name" Margin="0,16,0,4" Opacity="0.7" />
+                <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+
+                <TextBlock Text="Background color" Margin="0,16,0,4" Opacity="0.7" />
+                <controls:ColorSwatchPicker SelectedColor="{Binding BackgroundColor}" />
+
+                <ui:Button Content="Delete Application" Margin="0,24,0,0" HorizontalAlignment="Left"
+                           Appearance="Danger"
+                           Command="{Binding DataContext.DeleteApplicationCommand, ElementName=Root}"
+                           CommandParameter="{Binding}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

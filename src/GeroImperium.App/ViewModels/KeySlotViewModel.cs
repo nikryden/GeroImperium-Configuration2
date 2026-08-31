@@ -1,0 +1,150 @@
+using System.IO;
+using System.Windows.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
+using GeroImperium.App.Converters;
+using GeroImperium.Core.Data;
+using GeroImperium.Core.Imaging;
+using GeroImperium.Core.Models;
+using SixLabors.ImageSharp.PixelFormats;
+
+namespace GeroImperium.App.ViewModels;
+
+/// <summary>One of a KeyGroup's 6 fixed slots (positions 0-5, matching the physical GPA0-GPA5 layout).</summary>
+public sealed partial class KeySlotViewModel : ObservableObject
+{
+    private readonly GeroImperiumRepository _repository;
+    private readonly GeroImperiumKey _model;
+    private bool _isLoading;
+
+    public int Position => _model.Position;
+
+    public IReadOnlyList<ActionType> ActionTypeOptions { get; } = Enum.GetValues<ActionType>();
+
+    [ObservableProperty]
+    private ImageSource? _imagePreview;
+
+    [ObservableProperty]
+    private Color? _backgroundColor;
+
+    [ObservableProperty]
+    private ActionType _actionType;
+
+    [ObservableProperty]
+    private string? _shortcutToken;
+
+    [ObservableProperty]
+    private bool _ctrlModifier;
+
+    [ObservableProperty]
+    private bool _shiftModifier;
+
+    [ObservableProperty]
+    private bool _altModifier;
+
+    [ObservableProperty]
+    private bool _winModifier;
+
+    [ObservableProperty]
+    private string? _launchPath;
+
+    /// <summary>LaunchApp/Script require a firmware update and the Sync Service running -- see
+    /// pc_app_plan.md "Action types and the firmware gap". Shown, not hidden, but flagged.</summary>
+    public bool IsUnsupportedActionType => ActionType != ActionType.Shortcut;
+
+    public KeySlotViewModel(GeroImperiumKey model, GeroImperiumRepository repository)
+    {
+        _model = model;
+        _repository = repository;
+
+        _isLoading = true;
+        _imagePreview = ImageBytesConverter.ToImageSource(model.ImageData);
+        _backgroundColor = ApplicationItemViewModel.ArgbToColor(model.BackgroundColorArgb);
+
+        var action = model.KeyActionId is long id ? repository.GetKeyAction(id) : null;
+        _actionType = action?.ActionType ?? ActionType.Shortcut;
+        _shortcutToken = action?.ShortcutKey;
+        _ctrlModifier = action?.CtrlModifier ?? false;
+        _shiftModifier = action?.ShiftModifier ?? false;
+        _altModifier = action?.AltModifier ?? false;
+        _winModifier = action?.WinModifier ?? false;
+        _launchPath = action?.LaunchPath;
+        _isLoading = false;
+    }
+
+    partial void OnBackgroundColorChanged(Color? value)
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        _model.BackgroundColorArgb = ApplicationItemViewModel.ColorToArgb(value);
+
+        if (_model.SourceImageData is not null)
+        {
+            ReconvertImage();
+        }
+        else
+        {
+            _repository.UpdateKey(_model);
+        }
+    }
+
+    partial void OnActionTypeChanged(ActionType value)
+    {
+        OnPropertyChanged(nameof(IsUnsupportedActionType));
+        PersistAction();
+    }
+
+    partial void OnShortcutTokenChanged(string? value) => PersistAction();
+
+    partial void OnCtrlModifierChanged(bool value) => PersistAction();
+
+    partial void OnShiftModifierChanged(bool value) => PersistAction();
+
+    partial void OnAltModifierChanged(bool value) => PersistAction();
+
+    partial void OnWinModifierChanged(bool value) => PersistAction();
+
+    partial void OnLaunchPathChanged(string? value) => PersistAction();
+
+    public void SetImageFromFile(string path)
+    {
+        _model.SourceImageData = File.ReadAllBytes(path);
+        ReconvertImage();
+    }
+
+    private void ReconvertImage()
+    {
+        var background = BackgroundColor ?? Colors.Black;
+        var (previewPng, rgb565) = ImagePipeline.ConvertToPreviewAndRgb565(
+            _model.SourceImageData!, new Rgba32(background.R, background.G, background.B, background.A));
+
+        _model.ImageData = previewPng;
+        _model.ImageDataRgb565 = rgb565;
+        _repository.UpdateKey(_model);
+
+        ImagePreview = ImageBytesConverter.ToImageSource(previewPng);
+    }
+
+    private void PersistAction()
+    {
+        if (_isLoading)
+        {
+            return;
+        }
+
+        var action = _repository.UpsertAction(
+            ActionType,
+            ActionType == ActionType.Shortcut ? ShortcutToken : null,
+            ActionType == ActionType.Shortcut && CtrlModifier,
+            ActionType == ActionType.Shortcut && ShiftModifier,
+            ActionType == ActionType.Shortcut && AltModifier,
+            ActionType == ActionType.Shortcut && WinModifier,
+            ActionType == ActionType.LaunchApp ? LaunchPath : null,
+            scriptId: null);
+
+        _model.KeyActionId = action.Id;
+        _repository.UpdateKey(_model);
+    }
+}

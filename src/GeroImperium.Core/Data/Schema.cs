@@ -17,7 +17,8 @@ internal static class Schema
             Name TEXT NOT NULL DEFAULT '',
             ImageData BLOB,
             ImageDataRgb565 BLOB,
-            BackgroundColorArgb INTEGER
+            BackgroundColorArgb INTEGER,
+            SourceImageData BLOB
         );
 
         CREATE TABLE IF NOT EXISTS Scripts (
@@ -52,7 +53,8 @@ internal static class Schema
             ImageData BLOB,
             ImageDataRgb565 BLOB,
             KeyActionId INTEGER REFERENCES KeyActions(Id),
-            BackgroundColorArgb INTEGER
+            BackgroundColorArgb INTEGER,
+            SourceImageData BLOB
         );
 
         CREATE TABLE IF NOT EXISTS GeneralSettings (
