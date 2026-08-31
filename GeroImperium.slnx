@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GeroImperium.App/GeroImperium.App.csproj" />
+    <Project Path="src/GeroImperium.Core/GeroImperium.Core.csproj" />
+    <Project Path="src/GeroImperium.Service/GeroImperium.Service.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GeroImperium.Core.Tests/GeroImperium.Core.Tests.csproj" />
+  </Folder>
+</Solution>
