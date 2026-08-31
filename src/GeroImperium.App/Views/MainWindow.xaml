@@ -10,14 +10,21 @@
                  Title="{Binding Title}" Height="760" Width="1150">
     <ui:NavigationView x:Name="RootNavigation">
         <ui:NavigationView.MenuItems>
-            <ui:NavigationViewItem x:Name="ApplicationsNavItem" Content="Applications" Click="ApplicationsNavItem_Click">
+            <ui:NavigationViewItem x:Name="ApplicationsNavItem" Content="Applications" Click="ApplicationsNavItem_Click"
+                                    IsEnabled="{Binding SyncViewModel.CanNavigateAway}">
                 <ui:NavigationViewItem.Icon>
                     <ui:SymbolIcon Symbol="Apps24" />
                 </ui:NavigationViewItem.Icon>
             </ui:NavigationViewItem>
-            <ui:NavigationViewItem x:Name="KeyGroupsNavItem" Content="Key Groups" Click="KeyGroupsNavItem_Click">
+            <ui:NavigationViewItem x:Name="KeyGroupsNavItem" Content="Key Groups" Click="KeyGroupsNavItem_Click"
+                                    IsEnabled="{Binding SyncViewModel.CanNavigateAway}">
                 <ui:NavigationViewItem.Icon>
                     <ui:SymbolIcon Symbol="Grid24" />
+                </ui:NavigationViewItem.Icon>
+            </ui:NavigationViewItem>
+            <ui:NavigationViewItem x:Name="SyncNavItem" Content="Sync" Click="SyncNavItem_Click">
+                <ui:NavigationViewItem.Icon>
+                    <ui:SymbolIcon Symbol="ArrowSync24" />
                 </ui:NavigationViewItem.Icon>
             </ui:NavigationViewItem>
         </ui:NavigationView.MenuItems>

@@ -1,0 +1,49 @@
+<UserControl x:Class="GeroImperium.App.Views.SyncPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:GeroImperium.App.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:SyncViewModel}"
+             mc:Ignorable="d">
+    <StackPanel Margin="16" MaxWidth="640" HorizontalAlignment="Left">
+
+        <TextBlock Text="Connection" FontWeight="Bold" FontSize="16" Margin="0,0,0,8" />
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+            <TextBlock Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Margin="0,0,12,0" />
+            <ui:Button Content="Connect" Command="{Binding ConnectCommand}" Margin="0,0,8,0" />
+            <ui:Button Content="Disconnect" Command="{Binding DisconnectCommand}" />
+        </StackPanel>
+
+        <TextBlock Text="Full Database Push" FontWeight="Bold" FontSize="16" Margin="0,8,0,4" />
+        <TextBlock Text="Whole-file replace. Use for first connect, factory reset, or restoring a full profile. The device reboots on success. Do not disconnect the device mid-upload -- a dropped connection has no recovery path and needs a power cycle."
+                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,8" />
+        <ui:Button Content="Push Full Database" Command="{Binding PushFullDatabaseCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+        <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" Margin="0,0,0,4" />
+        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+        <TextBlock Text="Push a Single Item" FontWeight="Bold" FontSize="16" Margin="0,8,0,4" />
+        <TextBlock Text="Incremental commands -- no reboot, applies immediately. Use these for live edits instead of a full push."
+                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,8" />
+
+        <TextBlock Text="Application" Opacity="0.7" Margin="0,0,0,2" />
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <ComboBox Width="220" ItemsSource="{Binding Applications}" DisplayMemberPath="Name"
+                      SelectedItem="{Binding SelectedApplication}" Margin="0,0,8,0" />
+            <ui:Button Content="Push App Image" Command="{Binding PushApplicationImageCommand}" />
+        </StackPanel>
+
+        <TextBlock Text="Key Group" Opacity="0.7" Margin="0,0,0,2" />
+        <ComboBox Width="220" ItemsSource="{Binding KeyGroups}" DisplayMemberPath="Name"
+                  SelectedItem="{Binding SelectedKeyGroup}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+
+        <TextBlock Text="Key" Opacity="0.7" Margin="0,0,0,2" />
+        <StackPanel Orientation="Horizontal">
+            <ComboBox Width="220" ItemsSource="{Binding Keys}" DisplayMemberPath="Position"
+                      SelectedItem="{Binding SelectedKey}" Margin="0,0,8,0" />
+            <ui:Button Content="Push Key Image" Command="{Binding PushKeyImageCommand}" Margin="0,0,8,0" />
+            <ui:Button Content="Push Shortcut" Command="{Binding PushKeyShortcutCommand}" />
+        </StackPanel>
+    </StackPanel>
+</UserControl>

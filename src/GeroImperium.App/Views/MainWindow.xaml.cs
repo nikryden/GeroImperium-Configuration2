@@ -9,6 +9,7 @@ public partial class MainWindow : FluentWindow
     private readonly MainViewModel _viewModel;
     private readonly ApplicationsPage _applicationsPage;
     private readonly KeyGroupsPage _keyGroupsPage;
+    private readonly SyncPage _syncPage;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -18,6 +19,7 @@ public partial class MainWindow : FluentWindow
 
         _applicationsPage = new ApplicationsPage(viewModel.ApplicationsViewModel);
         _keyGroupsPage = new KeyGroupsPage(viewModel.KeyGroupsViewModel);
+        _syncPage = new SyncPage(viewModel.SyncViewModel);
 
         // NavigationView's content-presenter isn't ready until its template is applied, which hasn't
         // happened yet at construction time -- ReplaceContent here throws a NullReferenceException.
@@ -29,4 +31,7 @@ public partial class MainWindow : FluentWindow
 
     private void KeyGroupsNavItem_Click(object sender, RoutedEventArgs e)
         => RootNavigation.ReplaceContent(_keyGroupsPage, _viewModel.KeyGroupsViewModel);
+
+    private void SyncNavItem_Click(object sender, RoutedEventArgs e)
+        => RootNavigation.ReplaceContent(_syncPage, _viewModel.SyncViewModel);
 }

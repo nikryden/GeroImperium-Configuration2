@@ -10,18 +10,27 @@ namespace GeroImperium.App;
 
 public partial class App : Application
 {
+    private MainViewModel? _mainViewModel;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
         ApplicationThemeManager.Apply(ApplicationTheme.Dark, WindowBackdropType.None, updateAccent: true);
 
-        var database = new GeroImperiumDatabase(AppPaths.AuthoringDatabasePath);
+        var databasePath = AppPaths.AuthoringDatabasePath;
+        var database = new GeroImperiumDatabase(databasePath);
         database.EnsureSchemaCreated();
         var repository = new GeroImperiumRepository(database);
 
-        var mainViewModel = new MainViewModel(repository);
-        var mainWindow = new MainWindow(mainViewModel);
+        _mainViewModel = new MainViewModel(repository, databasePath);
+        var mainWindow = new MainWindow(_mainViewModel);
         mainWindow.Show();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _mainViewModel?.Dispose(); // releases the device's serial port, if connected
+        base.OnExit(e);
     }
 }
