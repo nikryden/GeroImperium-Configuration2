@@ -1,0 +1,34 @@
+using System.Management;
+
+namespace GeroImperium.Core.Protocol;
+
+/// <summary>
+/// Locates the device's CDC-ACM COM port(s) by USB hardware ID rather than the generic driver-assigned
+/// friendly name. Win32_SerialPort exposes both DeviceID ("COM5") and PNPDeviceID directly, so no registry
+/// or Win32_PnPEntity name-string parsing is needed -- see pc_app_integration.md "Finding the right COM port".
+/// </summary>
+public static class DevicePortLocator
+{
+    public static IReadOnlyList<string> FindDevicePorts()
+    {
+        var ports = new List<string>();
+
+        using var searcher = new ManagementObjectSearcher(
+            "SELECT DeviceID, PNPDeviceID FROM Win32_SerialPort");
+
+        foreach (var item in searcher.Get())
+        {
+            using (item)
+            {
+                var pnpDeviceId = item["PNPDeviceID"] as string ?? string.Empty;
+                if (pnpDeviceId.Contains(DeviceIdentity.PnpDeviceIdFragment, StringComparison.OrdinalIgnoreCase)
+                    && item["DeviceID"] is string deviceId)
+                {
+                    ports.Add(deviceId);
+                }
+            }
+        }
+
+        return ports;
+    }
+}
