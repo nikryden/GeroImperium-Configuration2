@@ -14,10 +14,34 @@
         <Grid Margin="32,24,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Margin="0,0,0,16">
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Page" FontSize="11" Foreground="{StaticResource MutedTextBrush}"
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
+
+                <ComboBox Grid.Column="1" Width="200" HorizontalAlignment="Left" ItemsSource="{Binding Pages}"
+                          DisplayMemberPath="Name" SelectedItem="{Binding SelectedPage}" />
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <ui:Button Content="▲" Width="36" Margin="0,0,4,0" ToolTip="Move page earlier"
+                               Command="{Binding MovePageEarlierCommand}" />
+                    <ui:Button Content="▼" Width="36" Margin="0,0,16,0" ToolTip="Move page later"
+                               Command="{Binding MovePageLaterCommand}" />
+                    <ui:Button Content="+ Add Page" Command="{Binding AddPageCommand}" Margin="0,0,8,0" />
+                    <ui:Button Content="Delete Page" Appearance="Danger" Command="{Binding DeletePageCommand}" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="0,0,0,16">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -27,13 +51,17 @@
                            Foreground="White" VerticalAlignment="Center" />
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ui:Button Content="▲" Width="36" Margin="0,0,4,0" ToolTip="Move application earlier"
+                               Command="{Binding MoveApplicationEarlierCommand}" />
+                    <ui:Button Content="▼" Width="36" Margin="0,0,16,0" ToolTip="Move application later"
+                               Command="{Binding MoveApplicationLaterCommand}" />
                     <ui:Button Content="+ Add Application" Command="{Binding AddApplicationCommand}" Margin="0,0,8,0" />
                     <ui:Button Content="Delete" Appearance="Danger" Command="{Binding DeleteApplicationCommand}"
                                CommandParameter="{Binding SelectedApplication}" />
                 </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="1">
+            <Grid Grid.Row="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="24" />

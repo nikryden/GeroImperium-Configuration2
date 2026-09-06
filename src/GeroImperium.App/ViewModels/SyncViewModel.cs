@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using GeroImperium.Core.Ble;
 using GeroImperium.Core.Data;
 using GeroImperium.Core.Http;
 using GeroImperium.Core.Models;
@@ -18,8 +19,13 @@ namespace GeroImperium.App.ViewModels;
 /// </summary>
 public sealed partial class SyncViewModel : ObservableObject, IDisposable
 {
+    private static readonly TimeSpan RestPollInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan BlePresenceInterval = TimeSpan.FromSeconds(20);
+
     private readonly GeroImperiumRepository _repository;
+    private readonly CancellationTokenSource _lifetimeCts = new();
     private GeroImperiumClient? _client;
+    private CancellationTokenSource? _pollCts;
 
     [ObservableProperty]
     private string _deviceIpAddress = string.Empty;
@@ -29,6 +35,15 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isConnected;
+
+    /// <summary>Cheap "is the device paired and nearby over Bluetooth" signal (doc/plan2.md's "Device
+    /// discovery & the 'connected' indicator") -- independent of REST reachability, refreshed continuously
+    /// regardless of Connect/Disconnect state. Useful to tell "device is off WiFi" apart from "device is off"
+    /// once a Reconnect-via-Bluetooth flow exists (phase 12.7); today it's just displayed.</summary>
+    [ObservableProperty]
+    private bool _isBlePaired;
+
+    public string BleStatusText => IsBlePaired ? "Bluetooth: device paired and nearby" : "Bluetooth: not detected";
 
     [ObservableProperty]
     private bool _isBusy;
@@ -56,6 +71,8 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsConnected && !IsBusy && DeviceIpAddress.Trim().Length > 0);
         DisconnectCommand = new RelayCommand(Disconnect, () => IsConnected && !IsBusy);
         SyncCommand = new AsyncRelayCommand(SyncAsync, () => IsConnected && !IsBusy);
+
+        _ = BlePresenceLoopAsync(_lifetimeCts.Token);
     }
 
     partial void OnIsConnectedChanged(bool value) => NotifyAllCommands();
@@ -67,6 +84,8 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
     }
 
     partial void OnDeviceIpAddressChanged(string value) => ConnectCommand.NotifyCanExecuteChanged();
+
+    partial void OnIsBlePairedChanged(bool value) => OnPropertyChanged(nameof(BleStatusText));
 
     private async Task ConnectAsync()
     {
@@ -84,10 +103,8 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
             DeviceStatus status = await client.GetStatusAsync();
             _client = client;
             IsConnected = true;
-            var wifi = status.Wifi;
-            ConnectionStatus = wifi is null
-                ? $"Connected to {status.Device}."
-                : $"Connected to {status.Device} -- WiFi {wifi.State}, {wifi.Ip}, RSSI {wifi.Rssi} dBm.";
+            ApplyStatus(status);
+            StartPolling();
 
             var settings = _repository.GetGeneralSettings();
             if (settings.DeviceIpAddress != ip)
@@ -105,10 +122,97 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
 
     private void Disconnect()
     {
+        StopPolling();
         _client?.Dispose();
         _client = null;
         IsConnected = false;
         ConnectionStatus = "Not connected";
+    }
+
+    private void ApplyStatus(DeviceStatus status)
+    {
+        var wifi = status.Wifi;
+        ConnectionStatus = wifi is null
+            ? $"Connected to {status.Device}."
+            : $"Connected to {status.Device} -- WiFi {wifi.State}, {wifi.Ip}, RSSI {wifi.Rssi} dBm.";
+    }
+
+    private void StartPolling()
+    {
+        StopPolling();
+        _pollCts = new CancellationTokenSource();
+        _ = RestPollLoopAsync(_pollCts.Token);
+    }
+
+    private void StopPolling()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
+    }
+
+    /// <summary>Keeps ConnectionStatus fresh (WiFi state/IP/RSSI can change) and detects a dropped connection
+    /// while idle, rather than only ever finding out on the next user-initiated action (doc/plan2.md's
+    /// "Device discovery & the 'connected' indicator"). Skips a tick while a Sync is in flight -- polling
+    /// would just queue behind it on GeroImperiumClient's single-flight semaphore anyway, no reason to stack
+    /// up waiters.</summary>
+    private async Task RestPollLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(RestPollInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(true))
+            {
+                if (_client is not { } client || IsBusy)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    DeviceStatus status = await client.GetStatusAsync(ct);
+                    ApplyStatus(status);
+                }
+                catch (Exception ex)
+                {
+                    IsConnected = false;
+                    ConnectionStatus = $"Lost connection: {ex.Message}";
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>Independent of Connect/Disconnect -- runs for the lifetime of this ViewModel so the indicator
+    /// reflects Bluetooth pairing state even before the first REST connect.</summary>
+    private async Task BlePresenceLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(BlePresenceInterval);
+        try
+        {
+            while (true)
+            {
+                try
+                {
+                    IsBlePaired = await DeviceBleClient.IsPairedAsync(ct);
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                    // Best-effort presence signal -- a transient WinRT failure shouldn't stop future checks.
+                }
+
+                if (!await timer.WaitForNextTickAsync(ct).ConfigureAwait(true))
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private async Task SyncAsync()
@@ -242,5 +346,10 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         SyncCommand.NotifyCanExecuteChanged();
     }
 
-    public void Dispose() => _client?.Dispose();
+    public void Dispose()
+    {
+        _lifetimeCts.Cancel();
+        StopPolling();
+        _client?.Dispose();
+    }
 }

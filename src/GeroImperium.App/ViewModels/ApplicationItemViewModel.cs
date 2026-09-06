@@ -17,6 +17,8 @@ public sealed partial class ApplicationItemViewModel : ObservableObject
     private readonly CoreApplication _model;
 
     public long Id => _model.Id;
+    public long ApplicationPageId => _model.ApplicationPageId;
+    internal string Order => _model.Order;
 
     [ObservableProperty]
     private string _name;
@@ -54,6 +56,14 @@ public sealed partial class ApplicationItemViewModel : ObservableObject
         {
             _repository.UpdateApplication(_model);
         }
+    }
+
+    /// <summary>Swaps position within the page (GetApplications sorts by "Order") -- used by the page's
+    /// Move Earlier/Later commands, mirroring KeyGroupsViewModel.MoveKeyGroup.</summary>
+    internal void SetOrder(string order)
+    {
+        _model.Order = order;
+        _repository.UpdateApplication(_model);
     }
 
     public void SetImageFromFile(string path)

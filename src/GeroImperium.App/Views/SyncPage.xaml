@@ -17,7 +17,8 @@
             <ui:Button Content="Connect" Command="{Binding ConnectCommand}" Margin="0,0,8,0" />
             <ui:Button Content="Disconnect" Command="{Binding DisconnectCommand}" />
         </StackPanel>
-        <TextBlock Text="{Binding ConnectionStatus}" TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
+        <TextBlock Text="{Binding ConnectionStatus}" TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,4" />
+        <TextBlock Text="{Binding BleStatusText}" TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
 
         <TextBlock Text="Sync" FontWeight="Bold" FontSize="16" Margin="0,0,0,4" />
         <TextBlock Text="Pushes every local Application/Key Group/Key/Shortcut to the device over REST -- new rows are created, previously-pushed rows are updated in place. Safe to re-run or interrupt; nothing here is destructive to the device."

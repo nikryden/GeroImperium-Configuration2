@@ -19,6 +19,17 @@ public sealed class DeviceBleClient : IDisposable
 
     public bool IsConnected => _device is not null && _device.ConnectionStatus == BluetoothConnectionStatus.Connected;
 
+    /// <summary>Cheap presence check -- true if the device shows up in Windows' already-paired BLE device
+    /// list, with no GATT connection opened. Purely a "reconnect via Bluetooth is likely to work" signal for
+    /// a connectivity indicator (doc/plan2.md's "Device discovery & the 'connected' indicator") -- distinct
+    /// from ConnectAsync, which actually opens the connection.</summary>
+    public static async Task<bool> IsPairedAsync(CancellationToken ct = default)
+    {
+        DeviceInformationCollection known = await DeviceInformation.FindAllAsync(BluetoothLEDevice.GetDeviceSelector())
+            .AsTask(ct).ConfigureAwait(false);
+        return known.Any(d => string.Equals(d.Name, DeviceName, StringComparison.Ordinal));
+    }
+
     /// <summary>Finds the device two ways, fast path first: already-known/paired (no advertising needed --
     /// and once paired, NimBLE stops advertising entirely since CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1, so a live
     /// scan would never find an already-connected device), else falls back to watching for its advertisement

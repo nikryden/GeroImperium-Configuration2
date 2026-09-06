@@ -205,4 +205,69 @@ public class GeroImperiumRepositoryTests : IDisposable
         Assert.Equal("Main", reloaded.Name);
         Assert.Equal("1", reloaded.Order);
     }
+
+    [Fact]
+    public void GetApplicationPages_OrdersByOrder_NotCreationOrder()
+    {
+        var second = _repository.AddApplicationPage("2", "Second");
+        var first = _repository.AddApplicationPage("1", "First");
+
+        var pages = _repository.GetApplicationPages();
+
+        Assert.Equal([first.Id, second.Id], pages.Select(p => p.Id));
+    }
+
+    [Fact]
+    public void AddApplicationPage_NameOnly_AppendsAfterExistingPages()
+    {
+        _repository.AddApplicationPage("1", "First");
+
+        var second = _repository.AddApplicationPage("Second");
+
+        Assert.Equal("2", second.Order);
+    }
+
+    [Fact]
+    public void AddApplication_WithExplicitPage_UsesThatPageAndOwnOrderSequence()
+    {
+        var pageA = _repository.AddApplicationPage("1", "A");
+        var pageB = _repository.AddApplicationPage("2", "B");
+        _repository.AddApplication("A1", pageA.Id);
+
+        var b1 = _repository.AddApplication("B1", pageB.Id);
+
+        Assert.Equal(pageB.Id, b1.ApplicationPageId);
+        Assert.Equal("1", b1.Order); // independent per-page order sequence, not a global counter
+    }
+
+    [Fact]
+    public void GetApplications_OrdersByOrder_NotCreationOrder()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        var second = _repository.AddApplication("Second", page.Id);
+        second.Order = "1";
+        _repository.UpdateApplication(second);
+        var first = _repository.AddApplication("First", page.Id);
+        first.Order = "0";
+        _repository.UpdateApplication(first);
+
+        var apps = _repository.GetApplications();
+
+        Assert.Equal([first.Id, second.Id], apps.Select(a => a.Id));
+    }
+
+    [Fact]
+    public void DeleteApplicationPage_CascadesApplicationsGroupsAndKeys()
+    {
+        var page = _repository.AddApplicationPage("1", "ToDelete");
+        var app = _repository.AddApplication("App", page.Id);
+        var group = _repository.AddKeyGroup(app.Id, "Group 1");
+
+        _repository.DeleteApplicationPage(page.Id);
+
+        Assert.Empty(_repository.GetApplicationPages());
+        Assert.Empty(_repository.GetApplications());
+        Assert.Empty(_repository.GetKeyGroups(app.Id));
+        Assert.Empty(_repository.GetKeys(group.Id));
+    }
 }

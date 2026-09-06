@@ -6,9 +6,9 @@ namespace GeroImperium.Core.Data;
 /// <summary>
 /// CRUD access to the authoring DB for the App's editor pages. Kept as plain ADO.NET over
 /// GeroImperiumDatabase's connection rather than an ORM -- the schema is small and fixed (Schema.cs).
-/// Page/order editing UI doesn't exist yet (tracked as doc/plan2.md phase 12.6) -- until then,
-/// AddApplication/AddKeyGroup assign an auto-created default page and a trailing "Order" so the required
-/// device-side columns are always populated.
+/// AddApplication(name)/AddKeyGroup still assign an auto-created default page and a trailing "Order" for
+/// callers that don't care (existing tests, scripted paths); the page-editing UI (doc/plan2.md phase 12.6)
+/// uses the explicit-page AddApplication(name, applicationPageId) overload instead.
 /// </summary>
 public sealed class GeroImperiumRepository
 {
@@ -28,7 +28,7 @@ public sealed class GeroImperiumRepository
     public List<ApplicationPage> GetApplicationPages()
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = """SELECT Id, "Order", Name, RemoteId FROM ApplicationPages ORDER BY Id;""";
+        command.CommandText = """SELECT Id, "Order", Name, RemoteId FROM ApplicationPages ORDER BY CAST("Order" AS INTEGER), Id;""";
         using var reader = command.ExecuteReader();
 
         var results = new List<ApplicationPage>();
@@ -65,6 +65,43 @@ public sealed class GeroImperiumRepository
         return new ApplicationPage { Id = id, Order = order, Name = name };
     }
 
+    /// <summary>Convenience overload for the page-editing UI -- appends after every existing page rather than
+    /// requiring the caller to compute the next "Order".</summary>
+    public ApplicationPage AddApplicationPage(string name)
+    {
+        var order = (GetApplicationPages().Count + 1).ToString();
+        return AddApplicationPage(order, name);
+    }
+
+    /// <summary>Cascades to every Application on this page (which itself cascades to KeyGroups/GeroImperiumKeys,
+    /// see DeleteApplication) before deleting the page row. Each DeleteApplication call is its own transaction
+    /// (it opens one internally) rather than one big transaction wrapping all of them -- SQLite/
+    /// Microsoft.Data.Sqlite doesn't support nesting BeginTransaction calls on the same connection.</summary>
+    public void DeleteApplicationPage(long id)
+    {
+        var applicationIds = new List<long>();
+        using (var selectApps = Connection.CreateCommand())
+        {
+            selectApps.CommandText = "SELECT Id FROM Applications WHERE ApplicationPageId = @pageId;";
+            selectApps.Parameters.AddWithValue("@pageId", id);
+            using var reader = selectApps.ExecuteReader();
+            while (reader.Read())
+            {
+                applicationIds.Add(reader.GetInt64(0));
+            }
+        }
+
+        foreach (var applicationId in applicationIds)
+        {
+            DeleteApplication(applicationId);
+        }
+
+        using var deletePage = Connection.CreateCommand();
+        deletePage.CommandText = "DELETE FROM ApplicationPages WHERE Id = @id;";
+        deletePage.Parameters.AddWithValue("@id", id);
+        deletePage.ExecuteNonQuery();
+    }
+
     /// <summary>Returns the first ApplicationPage, creating one ("1", "Page 1") if none exist yet. Used by
     /// AddApplication until a real page-management UI exists (doc/plan2.md phase 12.6).</summary>
     private ApplicationPage EnsureDefaultApplicationPage()
@@ -86,7 +123,7 @@ public sealed class GeroImperiumRepository
     public List<Application> GetApplications()
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = """SELECT Id, ApplicationPageId, "Order", Name, ImageData, ImageDataRgb565, ImageChangedAtUtc, BackgroundColorArgb, SourceImageData, RemoteId FROM Applications ORDER BY Id;""";
+        command.CommandText = """SELECT Id, ApplicationPageId, "Order", Name, ImageData, ImageDataRgb565, ImageChangedAtUtc, BackgroundColorArgb, SourceImageData, RemoteId FROM Applications ORDER BY CAST("Order" AS INTEGER), Id;""";
         using var reader = command.ExecuteReader();
 
         var results = new List<Application>();
@@ -110,13 +147,16 @@ public sealed class GeroImperiumRepository
         return results;
     }
 
-    public Application AddApplication(string name)
-    {
-        var page = EnsureDefaultApplicationPage();
+    /// <summary>Assigns the auto-created default page -- kept for callers that don't care about pages
+    /// (existing tests, and any future scripted/bulk-import path). The page-editing UI uses the explicit-page
+    /// overload below instead.</summary>
+    public Application AddApplication(string name) => AddApplication(name, EnsureDefaultApplicationPage().Id);
 
+    public Application AddApplication(string name, long applicationPageId)
+    {
         using var countCommand = Connection.CreateCommand();
         countCommand.CommandText = "SELECT COUNT(*) FROM Applications WHERE ApplicationPageId = @pageId;";
-        countCommand.Parameters.AddWithValue("@pageId", page.Id);
+        countCommand.Parameters.AddWithValue("@pageId", applicationPageId);
         var order = ((long)countCommand.ExecuteScalar()! + 1).ToString();
 
         using var command = Connection.CreateCommand();
@@ -124,12 +164,12 @@ public sealed class GeroImperiumRepository
             INSERT INTO Applications (ApplicationPageId, "Order", Name) VALUES (@pageId, @order, @name);
             SELECT last_insert_rowid();
             """;
-        command.Parameters.AddWithValue("@pageId", page.Id);
+        command.Parameters.AddWithValue("@pageId", applicationPageId);
         command.Parameters.AddWithValue("@order", order);
         command.Parameters.AddWithValue("@name", name);
         var id = (long)command.ExecuteScalar()!;
 
-        return new Application { Id = id, ApplicationPageId = page.Id, Order = order, Name = name };
+        return new Application { Id = id, ApplicationPageId = applicationPageId, Order = order, Name = name };
     }
 
     public void UpdateApplication(Application application)
