@@ -35,7 +35,7 @@ public sealed class AppLaunchService : IDisposable
         }
 
         GattReadResult result = await BleRetry.RunAsync(
-            () => characteristic.ReadValueAsync(BluetoothCacheMode.Uncached).AsTask(ct), ct: ct).ConfigureAwait(false);
+            () => characteristic.ReadValueAsync(BluetoothCacheMode.Uncached).AsTask(ct), r => r.Status, ct: ct).ConfigureAwait(false);
         return result.Status == GattCommunicationStatus.Success ? ParseAppId(result.Value.ToArray()) : null;
     }
 

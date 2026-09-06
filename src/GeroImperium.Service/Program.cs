@@ -1,5 +1,3 @@
-using GeroImperium.Core.Protocol;
-
 namespace GeroImperium.Service;
 
 internal static class Program
@@ -9,8 +7,7 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        using var watcher = new DeviceWatcher();
-        using var deviceManager = new DeviceConnectionManager(watcher);
+        var deviceManager = new DeviceConnectionManager();
         var pipeServer = new PipeServer(deviceManager);
         using var pipeServerCts = new CancellationTokenSource();
 
@@ -23,21 +20,24 @@ internal static class Program
 
         deviceManager.StatusChanged += (_, _) =>
         {
-            trayIcon.Text = deviceManager.IsConnected
-                ? $"GeroImperium Sync Service -- connected on {deviceManager.PortName}"
-                : "GeroImperium Sync Service -- not connected";
+            trayIcon.Text = deviceManager switch
+            {
+                { IsBleConnected: true, IsAppLaunchSubscribed: true } => "GeroImperium Sync Service -- connected (App-Launch active)",
+                { IsBleConnected: true } => "GeroImperium Sync Service -- connected (App-Launch unavailable)",
+                _ => "GeroImperium Sync Service -- not connected",
+            };
         };
 
         var trayMenu = new ContextMenuStrip();
         trayMenu.Items.Add("Exit", null, (_, _) => Application.Exit());
         trayIcon.ContextMenuStrip = trayMenu;
 
-        watcher.Start();
         _ = pipeServer.RunAsync(pipeServerCts.Token);
 
         Application.Run();
 
         pipeServerCts.Cancel();
         trayIcon.Visible = false;
+        deviceManager.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

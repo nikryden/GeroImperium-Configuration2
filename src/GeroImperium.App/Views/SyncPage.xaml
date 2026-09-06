@@ -10,40 +10,20 @@
     <StackPanel Margin="16" MaxWidth="640" HorizontalAlignment="Left">
 
         <TextBlock Text="Connection" FontWeight="Bold" FontSize="16" Margin="0,0,0,8" />
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-            <TextBlock Text="{Binding ConnectionStatus}" VerticalAlignment="Center" Margin="0,0,12,0" />
+        <TextBlock Text="Device IP address" Opacity="0.7" Margin="0,0,0,2" />
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+            <ui:TextBox Width="160" Text="{Binding DeviceIpAddress, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="192.168.1.22" Margin="0,0,8,0" />
             <ui:Button Content="Connect" Command="{Binding ConnectCommand}" Margin="0,0,8,0" />
             <ui:Button Content="Disconnect" Command="{Binding DisconnectCommand}" />
         </StackPanel>
+        <TextBlock Text="{Binding ConnectionStatus}" TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
 
-        <TextBlock Text="Full Database Push" FontWeight="Bold" FontSize="16" Margin="0,8,0,4" />
-        <TextBlock Text="Whole-file replace. Use for first connect, factory reset, or restoring a full profile. The device reboots on success. Do not disconnect the device mid-upload -- a dropped connection has no recovery path and needs a power cycle."
+        <TextBlock Text="Sync" FontWeight="Bold" FontSize="16" Margin="0,0,0,4" />
+        <TextBlock Text="Pushes every local Application/Key Group/Key/Shortcut to the device over REST -- new rows are created, previously-pushed rows are updated in place. Safe to re-run or interrupt; nothing here is destructive to the device."
                    TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,8" />
-        <ui:Button Content="Push Full Database" Command="{Binding PushFullDatabaseCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
+        <ui:Button Content="Sync Now" Command="{Binding SyncCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
         <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" Margin="0,0,0,4" />
-        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,0,0,16" />
-
-        <TextBlock Text="Push a Single Item" FontWeight="Bold" FontSize="16" Margin="0,8,0,4" />
-        <TextBlock Text="Incremental commands -- no reboot, applies immediately. Use these for live edits instead of a full push."
-                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,8" />
-
-        <TextBlock Text="Application" Opacity="0.7" Margin="0,0,0,2" />
-        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-            <ComboBox Width="220" ItemsSource="{Binding Applications}" DisplayMemberPath="Name"
-                      SelectedItem="{Binding SelectedApplication}" Margin="0,0,8,0" />
-            <ui:Button Content="Push App Image" Command="{Binding PushApplicationImageCommand}" />
-        </StackPanel>
-
-        <TextBlock Text="Key Group" Opacity="0.7" Margin="0,0,0,2" />
-        <ComboBox Width="220" ItemsSource="{Binding KeyGroups}" DisplayMemberPath="Name"
-                  SelectedItem="{Binding SelectedKeyGroup}" HorizontalAlignment="Left" Margin="0,0,0,8" />
-
-        <TextBlock Text="Key" Opacity="0.7" Margin="0,0,0,2" />
-        <StackPanel Orientation="Horizontal">
-            <ComboBox Width="220" ItemsSource="{Binding Keys}" DisplayMemberPath="Position"
-                      SelectedItem="{Binding SelectedKey}" Margin="0,0,8,0" />
-            <ui:Button Content="Push Key Image" Command="{Binding PushKeyImageCommand}" Margin="0,0,8,0" />
-            <ui:Button Content="Push Shortcut" Command="{Binding PushKeyShortcutCommand}" />
-        </StackPanel>
+        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" />
     </StackPanel>
 </UserControl>

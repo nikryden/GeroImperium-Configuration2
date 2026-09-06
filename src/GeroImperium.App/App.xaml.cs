@@ -18,19 +18,18 @@ public partial class App : Application
 
         ApplicationThemeManager.Apply(ApplicationTheme.Dark, WindowBackdropType.None, updateAccent: true);
 
-        var databasePath = AppPaths.AuthoringDatabasePath;
-        var database = new GeroImperiumDatabase(databasePath);
+        var database = new GeroImperiumDatabase(AppPaths.AuthoringDatabasePath);
         database.EnsureSchemaCreated();
         var repository = new GeroImperiumRepository(database);
 
-        _mainViewModel = new MainViewModel(repository, databasePath);
+        _mainViewModel = new MainViewModel(repository);
         var mainWindow = new MainWindow(_mainViewModel);
         mainWindow.Show();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _mainViewModel?.Dispose(); // releases the device's serial port, if connected
+        _mainViewModel?.Dispose(); // releases the REST client, if connected
         base.OnExit(e);
     }
 }

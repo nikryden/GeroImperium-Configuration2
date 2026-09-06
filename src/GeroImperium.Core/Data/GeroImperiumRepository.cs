@@ -40,6 +40,17 @@ public sealed class GeroImperiumRepository
         return results;
     }
 
+    public void UpdateApplicationPage(ApplicationPage page)
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = """UPDATE ApplicationPages SET "Order" = @order, Name = @name, RemoteId = @remoteId WHERE Id = @id;""";
+        command.Parameters.AddWithValue("@order", page.Order);
+        command.Parameters.AddWithValue("@name", page.Name);
+        command.Parameters.AddWithValue("@remoteId", ToDb(page.RemoteId));
+        command.Parameters.AddWithValue("@id", page.Id);
+        command.ExecuteNonQuery();
+    }
+
     public ApplicationPage AddApplicationPage(string order, string name)
     {
         using var command = Connection.CreateCommand();
@@ -333,6 +344,33 @@ public sealed class GeroImperiumRepository
 
     // ----- Key actions -----
 
+    public List<KeyAction> GetKeyActions()
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = "SELECT Id, Type, TextContent, ActionType, LaunchPath, ScriptId, RemoteId FROM KeyActions ORDER BY Id;";
+        using var reader = command.ExecuteReader();
+
+        var results = new List<KeyAction>();
+        while (reader.Read())
+        {
+            results.Add(ReadKeyAction(reader));
+        }
+
+        return results;
+    }
+
+    /// <summary>Only RemoteId is ever updated post-creation by the sync path -- Type/TextContent/ActionType/
+    /// LaunchPath/ScriptId are set once at UpsertAction time and otherwise immutable (a changed shortcut
+    /// dedups to a different, possibly-new row rather than mutating a shared one -- see UpsertAction).</summary>
+    public void UpdateKeyActionRemoteId(KeyAction action)
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = "UPDATE KeyActions SET RemoteId = @remoteId WHERE Id = @id;";
+        command.Parameters.AddWithValue("@remoteId", ToDb(action.RemoteId));
+        command.Parameters.AddWithValue("@id", action.Id);
+        command.ExecuteNonQuery();
+    }
+
     public KeyAction? GetKeyAction(long id)
     {
         using var command = Connection.CreateCommand();
@@ -408,6 +446,45 @@ public sealed class GeroImperiumRepository
         ScriptId = ReadNullableLong(reader, "ScriptId"),
         RemoteId = ReadNullableLong(reader, "RemoteId"),
     };
+
+    // ----- General settings -----
+
+    /// <summary>Returns the single GeneralSettings row, creating it with defaults if this is a brand-new
+    /// database (app-only settings, not one of the device's REST tables -- see GeneralSettings' doc comment).</summary>
+    public GeneralSettings GetGeneralSettings()
+    {
+        using (var command = Connection.CreateCommand())
+        {
+            command.CommandText = "SELECT Id, Theme, DeviceIpAddress, LastKnownBleDeviceId FROM GeneralSettings ORDER BY Id LIMIT 1;";
+            using var reader = command.ExecuteReader();
+            if (reader.Read())
+            {
+                return new GeneralSettings
+                {
+                    Id = reader.GetInt64(reader.GetOrdinal("Id")),
+                    Theme = reader.GetString(reader.GetOrdinal("Theme")),
+                    DeviceIpAddress = reader.IsDBNull(reader.GetOrdinal("DeviceIpAddress")) ? null : reader.GetString(reader.GetOrdinal("DeviceIpAddress")),
+                    LastKnownBleDeviceId = reader.IsDBNull(reader.GetOrdinal("LastKnownBleDeviceId")) ? null : reader.GetString(reader.GetOrdinal("LastKnownBleDeviceId")),
+                };
+            }
+        }
+
+        using var insert = Connection.CreateCommand();
+        insert.CommandText = "INSERT INTO GeneralSettings DEFAULT VALUES; SELECT last_insert_rowid();";
+        var id = (long)insert.ExecuteScalar()!;
+        return new GeneralSettings { Id = id };
+    }
+
+    public void UpdateGeneralSettings(GeneralSettings settings)
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = """UPDATE GeneralSettings SET Theme = @theme, DeviceIpAddress = @ip, LastKnownBleDeviceId = @bleId WHERE Id = @id;""";
+        command.Parameters.AddWithValue("@theme", settings.Theme);
+        command.Parameters.AddWithValue("@ip", ToDb(settings.DeviceIpAddress));
+        command.Parameters.AddWithValue("@bleId", ToDb(settings.LastKnownBleDeviceId));
+        command.Parameters.AddWithValue("@id", settings.Id);
+        command.ExecuteNonQuery();
+    }
 
     private static byte[]? ReadNullableBlob(SqliteDataReader reader, string column)
     {

@@ -53,7 +53,7 @@ public sealed class DeviceBleClient : IDisposable
         }
 
         GattDeviceServicesResult result = await BleRetry.RunAsync(
-            () => _device.GetGattServicesAsync(BluetoothCacheMode.Uncached).AsTask(ct), ct: ct).ConfigureAwait(false);
+            () => _device.GetGattServicesAsync(BluetoothCacheMode.Uncached).AsTask(ct), r => r.Status, ct: ct).ConfigureAwait(false);
         return result.Status == GattCommunicationStatus.Success
             ? result.Services.FirstOrDefault(s => s.Uuid == serviceUuid)
             : null;
@@ -63,7 +63,7 @@ public sealed class DeviceBleClient : IDisposable
     public async Task<GattCharacteristic?> GetCharacteristicAsync(GattDeviceService service, Guid characteristicUuid, CancellationToken ct = default)
     {
         GattCharacteristicsResult result = await BleRetry.RunAsync(
-            () => service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(ct), ct: ct).ConfigureAwait(false);
+            () => service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached).AsTask(ct), r => r.Status, ct: ct).ConfigureAwait(false);
         return result.Status == GattCommunicationStatus.Success
             ? result.Characteristics.FirstOrDefault(c => c.Uuid == characteristicUuid)
             : null;

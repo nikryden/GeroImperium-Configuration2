@@ -15,11 +15,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public SyncViewModel SyncViewModel { get; }
 
-    public MainViewModel(GeroImperiumRepository repository, string databasePath)
+    public MainViewModel(GeroImperiumRepository repository)
     {
         ApplicationsViewModel = new ApplicationsViewModel(repository);
         KeyGroupsViewModel = new KeyGroupsViewModel(repository);
-        SyncViewModel = new SyncViewModel(repository, databasePath);
+        SyncViewModel = new SyncViewModel(repository);
     }
 
     public void Dispose() => SyncViewModel.Dispose();

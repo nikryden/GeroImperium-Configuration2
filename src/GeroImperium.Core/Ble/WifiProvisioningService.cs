@@ -68,7 +68,7 @@ public sealed class WifiProvisioningService
         }
 
         GattReadResult result = await BleRetry.RunAsync(
-            () => statusChar.ReadValueAsync(BluetoothCacheMode.Uncached).AsTask(ct), ct: ct).ConfigureAwait(false);
+            () => statusChar.ReadValueAsync(BluetoothCacheMode.Uncached).AsTask(ct), r => r.Status, ct: ct).ConfigureAwait(false);
         return result.Status == GattCommunicationStatus.Success ? ParseStatusBlob(result.Value.ToArray()) : null;
     }
 

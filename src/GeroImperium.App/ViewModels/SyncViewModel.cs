@@ -1,26 +1,28 @@
-using System.Collections.ObjectModel;
-using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GeroImperium.Core.Data;
 using GeroImperium.Core.Http;
-using GeroImperium.Core.Ipc;
 using GeroImperium.Core.Models;
-using CoreApplication = GeroImperium.Core.Models.Application;
 
 namespace GeroImperium.App.ViewModels;
 
 /// <summary>
-/// Push to device. Bulk S/D/F for first-push/full-profile-restore; incremental I/J/T for single-field
-/// pushes -- matching the "which path to use" table in pc_app_integration.md. Talks to the Sync Service over
-/// a named pipe (Core/Ipc) rather than opening the CDC port itself -- the Service is the single owner of the
-/// port (see pc_app_plan.md "Both App and Service open the CDC port...").
+/// Diff-and-push sync straight against the device's REST API (doc/plan2.md's sync model) -- no more Sync
+/// Service/IPC involvement for CRUD, that pipe is now provisioning-handoff + App-Launch events only (see
+/// Core/Ipc's shrunk surface, doc/plan2.md phase 12.5). Walks ApplicationPages -> Applications [+images] ->
+/// KeyGroups -> KeyActions -> GeroImperiumKeys [+images] in FK order; POSTs a row with no RemoteId yet, PUTs
+/// one that already has one (unconditionally -- "skip if unchanged" needs a last-synced-snapshot this app
+/// doesn't track yet, so every Sync click currently re-sends every already-pushed row; correct, just not
+/// bandwidth-optimal). Deletes are NOT sent -- tombstone tracking for locally-removed rows is still an open
+/// decision in doc/plan2.md's "Open decisions", so today's Sync only ever creates/updates.
 /// </summary>
 public sealed partial class SyncViewModel : ObservableObject, IDisposable
 {
     private readonly GeroImperiumRepository _repository;
-    private readonly string _databasePath;
-    private readonly IpcDeviceClient _ipcClient = new();
+    private GeroImperiumClient? _client;
+
+    [ObservableProperty]
+    private string _deviceIpAddress = string.Empty;
 
     [ObservableProperty]
     private string _connectionStatus = "Not connected";
@@ -37,49 +39,23 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusText = string.Empty;
 
-    /// <summary>False while a bulk upload is in progress -- surfaced so the shell can disable navigation.
-    /// A dropped mid-bulk connection has no recovery path on the device (pc_app_integration.md), so the
-    /// user must not be able to wander off mid-upload.</summary>
+    /// <summary>Unlike the old CDC bulk push, a dropped connection mid-sync isn't catastrophic -- every row is
+    /// pushed individually and is idempotent to retry (doc/plan2.md) -- so this only guards against editing
+    /// the row currently in flight, not a device-safety concern.</summary>
     public bool CanNavigateAway => !IsBusy;
-
-    public ObservableCollection<CoreApplication> Applications { get; } = [];
-
-    [ObservableProperty]
-    private CoreApplication? _selectedApplication;
-
-    public ObservableCollection<KeyGroup> KeyGroups { get; } = [];
-
-    [ObservableProperty]
-    private KeyGroup? _selectedKeyGroup;
-
-    public ObservableCollection<GeroImperiumKey> Keys { get; } = [];
-
-    [ObservableProperty]
-    private GeroImperiumKey? _selectedKey;
 
     public IAsyncRelayCommand ConnectCommand { get; }
     public IRelayCommand DisconnectCommand { get; }
-    public IAsyncRelayCommand PushFullDatabaseCommand { get; }
-    public IAsyncRelayCommand PushApplicationImageCommand { get; }
-    public IAsyncRelayCommand PushKeyImageCommand { get; }
-    public IAsyncRelayCommand PushKeyShortcutCommand { get; }
+    public IAsyncRelayCommand SyncCommand { get; }
 
-    public SyncViewModel(GeroImperiumRepository repository, string databasePath)
+    public SyncViewModel(GeroImperiumRepository repository)
     {
         _repository = repository;
-        _databasePath = databasePath;
+        DeviceIpAddress = _repository.GetGeneralSettings().DeviceIpAddress ?? string.Empty;
 
-        ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsConnected && !IsBusy);
+        ConnectCommand = new AsyncRelayCommand(ConnectAsync, () => !IsConnected && !IsBusy && DeviceIpAddress.Trim().Length > 0);
         DisconnectCommand = new RelayCommand(Disconnect, () => IsConnected && !IsBusy);
-        PushFullDatabaseCommand = new AsyncRelayCommand(PushFullDatabaseAsync, () => IsConnected && !IsBusy);
-        PushApplicationImageCommand = new AsyncRelayCommand(PushApplicationImageAsync, () => IsConnected && !IsBusy && SelectedApplication is not null);
-        PushKeyImageCommand = new AsyncRelayCommand(PushKeyImageAsync, () => IsConnected && !IsBusy && SelectedKeyGroup is not null && SelectedKey is not null);
-        PushKeyShortcutCommand = new AsyncRelayCommand(PushKeyShortcutAsync, () => IsConnected && !IsBusy && SelectedKeyGroup is not null && SelectedKey is not null);
-
-        foreach (var app in _repository.GetApplications())
-        {
-            Applications.Add(app);
-        }
+        SyncCommand = new AsyncRelayCommand(SyncAsync, () => IsConnected && !IsBusy);
     }
 
     partial void OnIsConnectedChanged(bool value) => NotifyAllCommands();
@@ -90,112 +66,153 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         NotifyAllCommands();
     }
 
-    partial void OnSelectedApplicationChanged(CoreApplication? value)
-    {
-        KeyGroups.Clear();
-        SelectedKeyGroup = null;
-
-        if (value is not null)
-        {
-            foreach (var group in _repository.GetKeyGroups(value.Id))
-            {
-                KeyGroups.Add(group);
-            }
-        }
-
-        PushApplicationImageCommand.NotifyCanExecuteChanged();
-    }
-
-    partial void OnSelectedKeyGroupChanged(KeyGroup? value)
-    {
-        Keys.Clear();
-        SelectedKey = null;
-
-        if (value is not null)
-        {
-            foreach (var key in _repository.GetKeys(value.Id))
-            {
-                Keys.Add(key);
-            }
-        }
-    }
-
-    partial void OnSelectedKeyChanged(GeroImperiumKey? value)
-    {
-        PushKeyImageCommand.NotifyCanExecuteChanged();
-        PushKeyShortcutCommand.NotifyCanExecuteChanged();
-    }
+    partial void OnDeviceIpAddressChanged(string value) => ConnectCommand.NotifyCanExecuteChanged();
 
     private async Task ConnectAsync()
     {
-        ConnectionStatus = "Connecting to Sync Service...";
-
-        var connectedToService = await _ipcClient.ConnectAsync();
-        if (!connectedToService)
+        var ip = DeviceIpAddress.Trim();
+        if (ip.Length == 0)
         {
-            ConnectionStatus = "Sync Service not running";
+            ConnectionStatus = "Enter the device's IP address first.";
             return;
         }
 
+        ConnectionStatus = "Connecting...";
+        var client = new GeroImperiumClient(ip);
         try
         {
-            var status = await _ipcClient.GetStatusAsync();
-            IsConnected = status.IsConnected;
-            ConnectionStatus = status.IsConnected ? $"Connected on {status.PortName}" : "Sync Service running, no device connected";
+            DeviceStatus status = await client.GetStatusAsync();
+            _client = client;
+            IsConnected = true;
+            var wifi = status.Wifi;
+            ConnectionStatus = wifi is null
+                ? $"Connected to {status.Device}."
+                : $"Connected to {status.Device} -- WiFi {wifi.State}, {wifi.Ip}, RSSI {wifi.Rssi} dBm.";
+
+            var settings = _repository.GetGeneralSettings();
+            if (settings.DeviceIpAddress != ip)
+            {
+                settings.DeviceIpAddress = ip;
+                _repository.UpdateGeneralSettings(settings);
+            }
         }
         catch (Exception ex)
         {
-            ConnectionStatus = $"Failed to query Sync Service: {ex.Message}";
+            client.Dispose();
+            ConnectionStatus = $"Connection failed: {ex.Message}";
         }
     }
 
     private void Disconnect()
     {
-        _ipcClient.Dispose();
+        _client?.Dispose();
+        _client = null;
         IsConnected = false;
         ConnectionStatus = "Not connected";
     }
 
-    private async Task PushFullDatabaseAsync()
+    private async Task SyncAsync()
     {
+        if (_client is not { } client)
+        {
+            return;
+        }
+
         IsBusy = true;
+        ProgressPercent = 0;
         try
         {
-            StatusText = "Reading local database...";
-            var bytes = await File.ReadAllBytesAsync(_databasePath);
+            List<ApplicationPage> pages = _repository.GetApplicationPages();
+            List<Core.Models.Application> applications = _repository.GetApplications();
+            List<KeyAction> keyActions = _repository.GetKeyActions();
+            var groupsByApp = applications.ToDictionary(a => a.Id, a => _repository.GetKeyGroups(a.Id));
+            var keysByGroup = groupsByApp.Values.SelectMany(g => g).ToDictionary(g => g.Id, g => _repository.GetKeys(g.Id));
 
-            var progress = new Progress<IpcResponse>(p =>
+            // Only ActionType.Shortcut has any device-side meaning today (firmware only executes shortcuts,
+            // per pc_app_plan.md's "Action types and the firmware gap") -- LaunchApp/Script rows are pushed
+            // to no table and stay RemoteId == null; Keys referencing them fall back to KeyActionId = null.
+            var syncableActions = keyActions.Where(a => a.ActionType == ActionType.Shortcut).ToList();
+
+            int total = pages.Count + applications.Count + syncableActions.Count
+                + groupsByApp.Values.Sum(g => g.Count) + keysByGroup.Values.Sum(k => k.Count);
+            int done = 0;
+            void Advance(string stage)
             {
-                ProgressPercent = p.ProgressTotalBytes == 0 ? 0 : 100.0 * p.ProgressBytesSent / p.ProgressTotalBytes;
-                // ProgressStage is BulkUploadStage.ToString() from the Service (Core/Protocol/BulkUpload.cs) --
-                // matched here by name so the App doesn't need a Core.Protocol reference just for this.
-                StatusText = p.ProgressStage switch
+                done++;
+                ProgressPercent = total == 0 ? 100 : 100.0 * done / total;
+                StatusText = stage;
+            }
+
+            foreach (var page in pages)
+            {
+                page.RemoteId = await CreateOrUpdateAsync<ApplicationPageRow>(client, GeroImperiumTables.ApplicationPages,
+                    page.RemoteId, new { page.Order, page.Name }, r => r.Id);
+                _repository.UpdateApplicationPage(page);
+                Advance($"Synced page '{page.Name}'.");
+            }
+
+            foreach (var app in applications)
+            {
+                long pageRemoteId = pages.First(p => p.Id == app.ApplicationPageId).RemoteId
+                    ?? throw new InvalidOperationException($"Page {app.ApplicationPageId} has no RemoteId after syncing.");
+
+                app.RemoteId = await CreateOrUpdateAsync<ApplicationRow>(client, GeroImperiumTables.Applications,
+                    app.RemoteId, new { ApplicationPageId = pageRemoteId, app.Order, app.Name }, r => r.Id);
+                _repository.UpdateApplication(app);
+
+                if (app.ImageDataRgb565 is { } appImage)
                 {
-                    "Starting" => "Starting upload...",
-                    "Uploading" => $"Uploading chunk... {p.ProgressBytesSent}/{p.ProgressTotalBytes} bytes",
-                    "Finalizing" => "Finalizing -- device verifying CRC and rebooting...",
-                    _ => StatusText,
-                };
-            });
+                    await client.UploadImageAsync(GeroImperiumTables.Applications, app.RemoteId.Value, appImage);
+                }
 
-            var result = await _ipcClient.UploadDatabaseAsync(bytes, progress);
-
-            if (result.Success)
-            {
-                ProgressPercent = 100;
-                StatusText = "Push complete -- device is rebooting.";
-                // The device just restarted; the Service's connection to it is dead until it re-enumerates.
-                IsConnected = false;
-                ConnectionStatus = "Not connected (device rebooted)";
+                Advance($"Synced application '{app.Name}'.");
             }
-            else
+
+            foreach (var app in applications)
             {
-                StatusText = $"Push failed: {result.ErrorMessage}";
+                foreach (var group in groupsByApp[app.Id])
+                {
+                    group.RemoteId = await CreateOrUpdateAsync<KeyGroupRow>(client, GeroImperiumTables.KeyGroups,
+                        group.RemoteId, new { ApplicationId = app.RemoteId!.Value, group.Order, group.Name }, r => r.Id);
+                    _repository.UpdateKeyGroup(group);
+                    Advance($"Synced key group '{group.Name}'.");
+                }
             }
+
+            foreach (var action in syncableActions)
+            {
+                action.RemoteId = await CreateOrUpdateAsync<KeyActionRow>(client, GeroImperiumTables.KeyActions,
+                    action.RemoteId, new { Type = (int)action.Type, action.TextContent }, r => r.Id);
+                _repository.UpdateKeyActionRemoteId(action);
+                Advance("Synced a key action.");
+            }
+
+            foreach (var group in groupsByApp.Values.SelectMany(g => g))
+            {
+                foreach (var key in keysByGroup[group.Id])
+                {
+                    long? actionRemoteId = key.KeyActionId is long localActionId
+                        ? syncableActions.FirstOrDefault(a => a.Id == localActionId)?.RemoteId
+                        : null;
+
+                    key.RemoteId = await CreateOrUpdateAsync<KeyRow>(client, GeroImperiumTables.Keys,
+                        key.RemoteId, new { KeyGroupId = group.RemoteId!.Value, key.Position, KeyActionId = actionRemoteId }, r => r.Id);
+                    _repository.UpdateKey(key);
+
+                    if (key.ImageDataRgb565 is { } keyImage)
+                    {
+                        await client.UploadImageAsync(GeroImperiumTables.Keys, key.RemoteId.Value, keyImage);
+                    }
+
+                    Advance($"Synced key {key.Position} in '{group.Name}'.");
+                }
+            }
+
+            StatusText = $"Sync complete -- {done} row(s) pushed.";
         }
         catch (Exception ex)
         {
-            StatusText = $"Push failed: {ex.Message}";
+            StatusText = $"Sync failed: {ex.Message}";
         }
         finally
         {
@@ -203,121 +220,27 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         }
     }
 
-    private async Task PushApplicationImageAsync()
+    /// <summary>PUTs (and returns the same id) if remoteId is already set, else POSTs and returns the newly
+    /// created row's Id -- the one decision point that makes this "diff-and-push" rather than "always create".</summary>
+    private static async Task<long> CreateOrUpdateAsync<TRow>(GeroImperiumClient client, string table, long? remoteId,
+        object body, Func<TRow, long> getId)
     {
-        if (SelectedApplication is null)
+        if (remoteId is long id)
         {
-            return;
+            await client.UpdateAsync(table, id, body);
+            return id;
         }
 
-        if (SelectedApplication.ImageDataRgb565 is not { } imageBytes)
-        {
-            StatusText = $"'{SelectedApplication.Name}' has no image to push.";
-            return;
-        }
-
-        var appIndex = Applications.IndexOf(SelectedApplication); // app_index = row order by Id, same as Applications' load order
-        IsBusy = true;
-        try
-        {
-            StatusText = $"Pushing image for '{SelectedApplication.Name}'...";
-            var response = await _ipcClient.SetApplicationImageAsync((byte)appIndex, imageBytes);
-            StatusText = response.Success ? $"Pushed '{SelectedApplication.Name}' image." : $"Push failed: {response.ErrorMessage ?? "device rejected the image"}";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Push failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    private async Task PushKeyImageAsync()
-    {
-        if (SelectedKeyGroup is null || SelectedKey is null)
-        {
-            return;
-        }
-
-        if (SelectedKey.ImageDataRgb565 is not { } imageBytes)
-        {
-            StatusText = $"Key {SelectedKey.Position} has no image to push.";
-            return;
-        }
-
-        IsBusy = true;
-        try
-        {
-            StatusText = $"Pushing image for key {SelectedKey.Position}...";
-            var response = await _ipcClient.SetKeyImageAsync((int)SelectedKeyGroup.Id, (byte)SelectedKey.Position, imageBytes);
-            StatusText = response.Success ? $"Pushed key {SelectedKey.Position} image." : $"Push failed: {response.ErrorMessage ?? "device rejected the image"}";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Push failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    // TODO(doc/plan2.md 12.5/12.6): this still routes through the CDC-era IPC SetShortcutAsync (modifiers
-    // byte + single token), which is being replaced by a direct REST PUT of KeyActions.TextContent. Parsing
-    // back out of TextContent here is a bridge to keep this compiling against the new KeyAction shape, not
-    // the final design.
-    private async Task PushKeyShortcutAsync()
-    {
-        if (SelectedKeyGroup is null || SelectedKey is null)
-        {
-            return;
-        }
-
-        var action = SelectedKey.KeyActionId is long id ? _repository.GetKeyAction(id) : null;
-        if (action is null || action.ActionType != ActionType.Shortcut || action.Type != HidActionKind.Hid || string.IsNullOrEmpty(action.TextContent))
-        {
-            StatusText = $"Key {SelectedKey.Position} has no shortcut action to push (LaunchApp/Script don't have a device-side effect yet).";
-            return;
-        }
-
-        var steps = ChordSyntax.Parse(action.TextContent);
-        var step = steps.Count > 0 ? steps[0] : ChordStep.Empty;
-
-        byte modifiers = 0;
-        if (step.Ctrl) modifiers |= 1 << 0;
-        if (step.Shift) modifiers |= 1 << 1;
-        if (step.Alt) modifiers |= 1 << 2;
-        if (step.Win) modifiers |= 1 << 3;
-        var shortcutToken = step.Keys.Count > 0 ? step.Keys[0] : null;
-
-        IsBusy = true;
-        try
-        {
-            StatusText = $"Pushing shortcut for key {SelectedKey.Position}...";
-            var response = await _ipcClient.SetShortcutAsync((int)SelectedKeyGroup.Id, (byte)SelectedKey.Position, modifiers, shortcutToken);
-            StatusText = response.Success ? $"Pushed key {SelectedKey.Position} shortcut." : $"Push failed: {response.ErrorMessage ?? "device rejected the shortcut"}";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Push failed: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        TRow created = await client.CreateAsync<TRow>(table, body);
+        return getId(created);
     }
 
     private void NotifyAllCommands()
     {
         ConnectCommand.NotifyCanExecuteChanged();
         DisconnectCommand.NotifyCanExecuteChanged();
-        PushFullDatabaseCommand.NotifyCanExecuteChanged();
-        PushApplicationImageCommand.NotifyCanExecuteChanged();
-        PushKeyImageCommand.NotifyCanExecuteChanged();
-        PushKeyShortcutCommand.NotifyCanExecuteChanged();
+        SyncCommand.NotifyCanExecuteChanged();
     }
 
-    public void Dispose() => _ipcClient.Dispose();
+    public void Dispose() => _client?.Dispose();
 }
