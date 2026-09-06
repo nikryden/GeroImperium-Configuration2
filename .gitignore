@@ -2,6 +2,7 @@
 bin/
 obj/
 out/
+*_wpftmp.csproj
 
 ## Visual Studio / Rider
 .vs/

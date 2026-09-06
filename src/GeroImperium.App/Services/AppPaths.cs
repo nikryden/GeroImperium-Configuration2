@@ -11,9 +11,10 @@ public static class AppPaths
         {
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "timeonline",
                 "GeroImperium");
             Directory.CreateDirectory(dir);
-            return Path.Combine(dir, "authoring.db");
+            return Path.Combine(dir, "GeroImperiumData.db");
         }
     }
 }

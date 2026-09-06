@@ -13,7 +13,7 @@ public class SchemaTests
     }
 
     [Fact]
-    public void EnsureSchemaCreated_CreatesAllSixTables()
+    public void EnsureSchemaCreated_CreatesAllSevenTables()
     {
         using var db = CreateInMemoryDatabase();
 
@@ -27,7 +27,7 @@ public class SchemaTests
         }
 
         Assert.Equal(
-            new[] { "Applications", "GeneralSettings", "GeroImperiumKeys", "KeyActions", "KeyGroups", "Scripts" },
+            new[] { "ApplicationPages", "Applications", "GeneralSettings", "GeroImperiumKeys", "KeyActions", "KeyGroups", "Scripts" },
             tables);
     }
 
@@ -39,10 +39,11 @@ public class SchemaTests
     }
 
     [Theory]
-    [InlineData("Applications", new[] { "Id", "ImageDataRgb565", "ImageData" })]
-    [InlineData("KeyGroups", new[] { "Id", "ApplicationId" })]
-    [InlineData("GeroImperiumKeys", new[] { "KeyGroupId", "Position", "ImageDataRgb565", "ImageData", "KeyActionId" })]
-    [InlineData("KeyActions", new[] { "Id", "ShortcutKey", "CtrlModifier", "AltModifier", "ShiftModifier", "WinModifier" })]
+    [InlineData("ApplicationPages", new[] { "Id", "Order", "Name" })]
+    [InlineData("Applications", new[] { "Id", "ApplicationPageId", "Order", "Name", "ImageDataRgb565", "ImageData", "ImageChangedAtUtc" })]
+    [InlineData("KeyGroups", new[] { "Id", "ApplicationId", "Order" })]
+    [InlineData("GeroImperiumKeys", new[] { "KeyGroupId", "Position", "ImageDataRgb565", "ImageData", "ImageChangedAtUtc", "KeyActionId" })]
+    [InlineData("KeyActions", new[] { "Id", "Type", "TextContent" })]
     public void DeviceReadColumns_ExistWithExactNames(string table, string[] expectedColumns)
     {
         using var db = CreateInMemoryDatabase();
@@ -81,6 +82,17 @@ public class SchemaTests
 
         using var command = db.Connection.CreateCommand();
         command.CommandText = "INSERT INTO KeyGroups (ApplicationId, Name) VALUES (999, 'orphan');";
+
+        Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
+    }
+
+    [Fact]
+    public void ApplicationsForeignKeyToApplicationPages_IsEnforced()
+    {
+        using var db = CreateInMemoryDatabase();
+
+        using var command = db.Connection.CreateCommand();
+        command.CommandText = "INSERT INTO Applications (ApplicationPageId, Name) VALUES (999, 'orphan');";
 
         Assert.Throws<SqliteException>(() => command.ExecuteNonQuery());
     }

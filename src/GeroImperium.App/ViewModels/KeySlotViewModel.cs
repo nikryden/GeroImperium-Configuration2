@@ -3,6 +3,7 @@ using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using GeroImperium.App.Converters;
 using GeroImperium.Core.Data;
+using GeroImperium.Core.Http;
 using GeroImperium.Core.Imaging;
 using GeroImperium.Core.Models;
 using SixLabors.ImageSharp.PixelFormats;
@@ -62,12 +63,21 @@ public sealed partial class KeySlotViewModel : ObservableObject
 
         var action = model.KeyActionId is long id ? repository.GetKeyAction(id) : null;
         _actionType = action?.ActionType ?? ActionType.Shortcut;
-        _shortcutToken = action?.ShortcutKey;
-        _ctrlModifier = action?.CtrlModifier ?? false;
-        _shiftModifier = action?.ShiftModifier ?? false;
-        _altModifier = action?.AltModifier ?? false;
-        _winModifier = action?.WinModifier ?? false;
         _launchPath = action?.LaunchPath;
+
+        // TextContent is a chord-syntax string (see ChordSyntax) -- this editor only exposes a single step
+        // (one key + 4 modifier checkboxes) today, so only the first parsed step round-trips into the UI.
+        if (action is { Type: HidActionKind.Hid, TextContent.Length: > 0 }
+            && ChordSyntax.TryParse(action.TextContent, out var steps) && steps.Count > 0)
+        {
+            var step = steps[0];
+            _ctrlModifier = step.Ctrl;
+            _shiftModifier = step.Shift;
+            _altModifier = step.Alt;
+            _winModifier = step.Win;
+            _shortcutToken = step.Keys.Count > 0 ? step.Keys[0] : null;
+        }
+
         _isLoading = false;
     }
 
@@ -122,6 +132,7 @@ public sealed partial class KeySlotViewModel : ObservableObject
 
         _model.ImageData = previewPng;
         _model.ImageDataRgb565 = rgb565;
+        _model.ImageChangedAtUtc = DateTime.UtcNow;
         _repository.UpdateKey(_model);
 
         ImagePreview = ImageBytesConverter.ToImageSource(previewPng);
@@ -134,13 +145,17 @@ public sealed partial class KeySlotViewModel : ObservableObject
             return;
         }
 
+        string? textContent = null;
+        if (ActionType == ActionType.Shortcut && !string.IsNullOrEmpty(ShortcutToken))
+        {
+            var step = new ChordStep(CtrlModifier, ShiftModifier, AltModifier, WinModifier, [ShortcutToken]);
+            textContent = ChordSyntax.Build([step]);
+        }
+
         var action = _repository.UpsertAction(
             ActionType,
-            ActionType == ActionType.Shortcut ? ShortcutToken : null,
-            ActionType == ActionType.Shortcut && CtrlModifier,
-            ActionType == ActionType.Shortcut && ShiftModifier,
-            ActionType == ActionType.Shortcut && AltModifier,
-            ActionType == ActionType.Shortcut && WinModifier,
+            HidActionKind.Hid,
+            textContent,
             ActionType == ActionType.LaunchApp ? LaunchPath : null,
             scriptId: null);
 

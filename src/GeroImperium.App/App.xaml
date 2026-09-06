@@ -15,6 +15,86 @@
             <converters:NotNullToVisibleConverter x:Key="NotNullToVisibleConverter" />
             <converters:EnumEqualsVisibilityConverter x:Key="EnumEqualsVisibilityConverter" />
             <converters:BoolToVisibleConverter x:Key="BoolToVisibleConverter" />
+            <converters:ColorToBrushConverter x:Key="ColorToBrushConverter" />
+            <converters:ImageBytesToImageSourceConverter x:Key="ImageBytesToImageSourceConverter" />
+
+            <SolidColorBrush x:Key="AppBackgroundBrush" Color="#131118" />
+            <SolidColorBrush x:Key="ContentBackgroundBrush" Color="#131118" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#17151F" />
+            <SolidColorBrush x:Key="CardBorderBrush" Color="#2B2836" />
+            <SolidColorBrush x:Key="MutedTextBrush" Color="#9A97A6" />
+
+            <LinearGradientBrush x:Key="SidebarGradientBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#0B0A14" Offset="0.0" />
+                <GradientStop Color="#1C1533" Offset="0.55" />
+                <GradientStop Color="#3B1E63" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="LogoGradientBrush" StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#F4C95D" Offset="0.0" />
+                <GradientStop Color="#D98E2E" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <LinearGradientBrush x:Key="BannerGradientBrush" StartPoint="0,0" EndPoint="1,0">
+                <GradientStop Color="#5A5FE0" Offset="0.0" />
+                <GradientStop Color="#9B6FE0" Offset="1.0" />
+            </LinearGradientBrush>
+
+            <Style x:Key="NavItemStyle" TargetType="RadioButton">
+                <Setter Property="GroupName" Value="MainNav" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+                <Setter Property="Padding" Value="14,11" />
+                <Setter Property="Foreground" Value="#C7C4D1" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="RadioButton">
+                            <Border x:Name="Bg" CornerRadius="8" Padding="{TemplateBinding Padding}" Background="Transparent">
+                                <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="#332E4A" />
+                                    <Setter Property="Foreground" Value="White" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bg" Property="Background" Value="#241F3A" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.4" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Shared selection-ring style for tile galleries (Applications grid, Keys device panel) -->
+            <Style x:Key="GalleryTileItemStyle" TargetType="ListBoxItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Margin" Value="8" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <Border x:Name="SelectionBorder" CornerRadius="14" Padding="4" Background="Transparent"
+                                    BorderThickness="2" BorderBrush="Transparent">
+                                <ContentPresenter />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter TargetName="SelectionBorder" Property="BorderBrush" Value="#8B6FE0" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="SelectionBorder" Property="Background" Value="#14FFFFFF" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

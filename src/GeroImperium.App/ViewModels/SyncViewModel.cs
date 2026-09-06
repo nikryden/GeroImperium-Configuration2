@@ -3,23 +3,24 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using GeroImperium.Core.Data;
+using GeroImperium.Core.Http;
+using GeroImperium.Core.Ipc;
 using GeroImperium.Core.Models;
-using GeroImperium.Core.Protocol;
 using CoreApplication = GeroImperium.Core.Models.Application;
 
 namespace GeroImperium.App.ViewModels;
 
 /// <summary>
 /// Push to device. Bulk S/D/F for first-push/full-profile-restore; incremental I/J/T for single-field
-/// pushes -- matching the "which path to use" table in pc_app_integration.md. Opens the CDC port directly
-/// for now (no Sync Service/IPC yet -- that's phase 11.6; this page is the only thing holding the port open
-/// until then).
+/// pushes -- matching the "which path to use" table in pc_app_integration.md. Talks to the Sync Service over
+/// a named pipe (Core/Ipc) rather than opening the CDC port itself -- the Service is the single owner of the
+/// port (see pc_app_plan.md "Both App and Service open the CDC port...").
 /// </summary>
 public sealed partial class SyncViewModel : ObservableObject, IDisposable
 {
     private readonly GeroImperiumRepository _repository;
     private readonly string _databasePath;
-    private DeviceConnection? _connection;
+    private readonly IpcDeviceClient _ipcClient = new();
 
     [ObservableProperty]
     private string _connectionStatus = "Not connected";
@@ -127,67 +128,63 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
 
     private async Task ConnectAsync()
     {
-        var ports = DevicePortLocator.FindDevicePorts();
-        if (ports.Count == 0)
+        ConnectionStatus = "Connecting to Sync Service...";
+
+        var connectedToService = await _ipcClient.ConnectAsync();
+        if (!connectedToService)
         {
-            ConnectionStatus = "No device found";
+            ConnectionStatus = "Sync Service not running";
             return;
         }
 
         try
         {
-            _connection = await Task.Run(() => DeviceConnection.Open(ports[0]));
-            IsConnected = true;
-            ConnectionStatus = $"Connected on {ports[0]}";
+            var status = await _ipcClient.GetStatusAsync();
+            IsConnected = status.IsConnected;
+            ConnectionStatus = status.IsConnected ? $"Connected on {status.PortName}" : "Sync Service running, no device connected";
         }
         catch (Exception ex)
         {
-            ConnectionStatus = $"Failed to connect: {ex.Message}";
+            ConnectionStatus = $"Failed to query Sync Service: {ex.Message}";
         }
     }
 
     private void Disconnect()
     {
-        _connection?.Dispose();
-        _connection = null;
+        _ipcClient.Dispose();
         IsConnected = false;
         ConnectionStatus = "Not connected";
     }
 
     private async Task PushFullDatabaseAsync()
     {
-        if (_connection is null)
-        {
-            return;
-        }
-
         IsBusy = true;
         try
         {
             StatusText = "Reading local database...";
             var bytes = await File.ReadAllBytesAsync(_databasePath);
 
-            var progress = new Progress<BulkUploadProgress>(p =>
+            var progress = new Progress<IpcResponse>(p =>
             {
-                ProgressPercent = p.TotalBytes == 0 ? 0 : 100.0 * p.BytesSent / p.TotalBytes;
-                StatusText = p.Stage switch
+                ProgressPercent = p.ProgressTotalBytes == 0 ? 0 : 100.0 * p.ProgressBytesSent / p.ProgressTotalBytes;
+                // ProgressStage is BulkUploadStage.ToString() from the Service (Core/Protocol/BulkUpload.cs) --
+                // matched here by name so the App doesn't need a Core.Protocol reference just for this.
+                StatusText = p.ProgressStage switch
                 {
-                    BulkUploadStage.Starting => "Starting upload...",
-                    BulkUploadStage.Uploading => $"Uploading chunk... {p.BytesSent}/{p.TotalBytes} bytes",
-                    BulkUploadStage.Finalizing => "Finalizing -- device verifying CRC and rebooting...",
+                    "Starting" => "Starting upload...",
+                    "Uploading" => $"Uploading chunk... {p.ProgressBytesSent}/{p.ProgressTotalBytes} bytes",
+                    "Finalizing" => "Finalizing -- device verifying CRC and rebooting...",
                     _ => StatusText,
                 };
             });
 
-            var result = await _connection.Client.UploadDatabaseAsync(bytes, progress);
+            var result = await _ipcClient.UploadDatabaseAsync(bytes, progress);
 
             if (result.Success)
             {
                 ProgressPercent = 100;
                 StatusText = "Push complete -- device is rebooting.";
-                // The device just restarted; the port is dead. Drop the connection rather than pretend it's live.
-                _connection.Dispose();
-                _connection = null;
+                // The device just restarted; the Service's connection to it is dead until it re-enumerates.
                 IsConnected = false;
                 ConnectionStatus = "Not connected (device rebooted)";
             }
@@ -208,7 +205,7 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
 
     private async Task PushApplicationImageAsync()
     {
-        if (_connection is null || SelectedApplication is null)
+        if (SelectedApplication is null)
         {
             return;
         }
@@ -224,8 +221,8 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         try
         {
             StatusText = $"Pushing image for '{SelectedApplication.Name}'...";
-            var ok = await _connection.Client.SetApplicationImageAsync((byte)appIndex, imageBytes);
-            StatusText = ok ? $"Pushed '{SelectedApplication.Name}' image." : $"Device rejected the image for '{SelectedApplication.Name}'.";
+            var response = await _ipcClient.SetApplicationImageAsync((byte)appIndex, imageBytes);
+            StatusText = response.Success ? $"Pushed '{SelectedApplication.Name}' image." : $"Push failed: {response.ErrorMessage ?? "device rejected the image"}";
         }
         catch (Exception ex)
         {
@@ -239,7 +236,7 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
 
     private async Task PushKeyImageAsync()
     {
-        if (_connection is null || SelectedKeyGroup is null || SelectedKey is null)
+        if (SelectedKeyGroup is null || SelectedKey is null)
         {
             return;
         }
@@ -254,8 +251,8 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         try
         {
             StatusText = $"Pushing image for key {SelectedKey.Position}...";
-            var ok = await _connection.Client.SetKeyImageAsync((ushort)SelectedKeyGroup.Id, (byte)SelectedKey.Position, imageBytes);
-            StatusText = ok ? $"Pushed key {SelectedKey.Position} image." : $"Device rejected the image for key {SelectedKey.Position}.";
+            var response = await _ipcClient.SetKeyImageAsync((int)SelectedKeyGroup.Id, (byte)SelectedKey.Position, imageBytes);
+            StatusText = response.Success ? $"Pushed key {SelectedKey.Position} image." : $"Push failed: {response.ErrorMessage ?? "device rejected the image"}";
         }
         catch (Exception ex)
         {
@@ -267,32 +264,40 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         }
     }
 
+    // TODO(doc/plan2.md 12.5/12.6): this still routes through the CDC-era IPC SetShortcutAsync (modifiers
+    // byte + single token), which is being replaced by a direct REST PUT of KeyActions.TextContent. Parsing
+    // back out of TextContent here is a bridge to keep this compiling against the new KeyAction shape, not
+    // the final design.
     private async Task PushKeyShortcutAsync()
     {
-        if (_connection is null || SelectedKeyGroup is null || SelectedKey is null)
+        if (SelectedKeyGroup is null || SelectedKey is null)
         {
             return;
         }
 
         var action = SelectedKey.KeyActionId is long id ? _repository.GetKeyAction(id) : null;
-        if (action is null || action.ActionType != ActionType.Shortcut)
+        if (action is null || action.ActionType != ActionType.Shortcut || action.Type != HidActionKind.Hid || string.IsNullOrEmpty(action.TextContent))
         {
             StatusText = $"Key {SelectedKey.Position} has no shortcut action to push (LaunchApp/Script don't have a device-side effect yet).";
             return;
         }
 
-        var modifiers = ShortcutModifiers.None;
-        if (action.CtrlModifier) modifiers |= ShortcutModifiers.Ctrl;
-        if (action.ShiftModifier) modifiers |= ShortcutModifiers.Shift;
-        if (action.AltModifier) modifiers |= ShortcutModifiers.Alt;
-        if (action.WinModifier) modifiers |= ShortcutModifiers.Win;
+        var steps = ChordSyntax.Parse(action.TextContent);
+        var step = steps.Count > 0 ? steps[0] : ChordStep.Empty;
+
+        byte modifiers = 0;
+        if (step.Ctrl) modifiers |= 1 << 0;
+        if (step.Shift) modifiers |= 1 << 1;
+        if (step.Alt) modifiers |= 1 << 2;
+        if (step.Win) modifiers |= 1 << 3;
+        var shortcutToken = step.Keys.Count > 0 ? step.Keys[0] : null;
 
         IsBusy = true;
         try
         {
             StatusText = $"Pushing shortcut for key {SelectedKey.Position}...";
-            var ok = await _connection.Client.SetShortcutAsync((ushort)SelectedKeyGroup.Id, (byte)SelectedKey.Position, modifiers, action.ShortcutKey);
-            StatusText = ok ? $"Pushed key {SelectedKey.Position} shortcut." : $"Device rejected the shortcut for key {SelectedKey.Position}.";
+            var response = await _ipcClient.SetShortcutAsync((int)SelectedKeyGroup.Id, (byte)SelectedKey.Position, modifiers, shortcutToken);
+            StatusText = response.Success ? $"Pushed key {SelectedKey.Position} shortcut." : $"Push failed: {response.ErrorMessage ?? "device rejected the shortcut"}";
         }
         catch (Exception ex)
         {
@@ -314,5 +319,5 @@ public sealed partial class SyncViewModel : ObservableObject, IDisposable
         PushKeyShortcutCommand.NotifyCanExecuteChanged();
     }
 
-    public void Dispose() => _connection?.Dispose();
+    public void Dispose() => _ipcClient.Dispose();
 }

@@ -72,6 +72,7 @@ public sealed partial class ApplicationItemViewModel : ObservableObject
 
         _model.ImageData = previewPng;
         _model.ImageDataRgb565 = rgb565;
+        _model.ImageChangedAtUtc = DateTime.UtcNow;
         _repository.UpdateApplication(_model);
 
         ImagePreview = ImageBytesConverter.ToImageSource(previewPng);

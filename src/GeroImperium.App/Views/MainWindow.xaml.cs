@@ -21,17 +21,15 @@ public partial class MainWindow : FluentWindow
         _keyGroupsPage = new KeyGroupsPage(viewModel.KeyGroupsViewModel);
         _syncPage = new SyncPage(viewModel.SyncViewModel);
 
-        // NavigationView's content-presenter isn't ready until its template is applied, which hasn't
-        // happened yet at construction time -- ReplaceContent here throws a NullReferenceException.
-        Loaded += (_, _) => RootNavigation.ReplaceContent(_applicationsPage, _viewModel.ApplicationsViewModel);
+        PageHost.Content = _applicationsPage;
     }
 
     private void ApplicationsNavItem_Click(object sender, RoutedEventArgs e)
-        => RootNavigation.ReplaceContent(_applicationsPage, _viewModel.ApplicationsViewModel);
+        => PageHost.Content = _applicationsPage;
 
     private void KeyGroupsNavItem_Click(object sender, RoutedEventArgs e)
-        => RootNavigation.ReplaceContent(_keyGroupsPage, _viewModel.KeyGroupsViewModel);
+        => PageHost.Content = _keyGroupsPage;
 
     private void SyncNavItem_Click(object sender, RoutedEventArgs e)
-        => RootNavigation.ReplaceContent(_syncPage, _viewModel.SyncViewModel);
+        => PageHost.Content = _syncPage;
 }

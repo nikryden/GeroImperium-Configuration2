@@ -7,26 +7,67 @@
                  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
                  d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
                  mc:Ignorable="d"
-                 Title="{Binding Title}" Height="760" Width="1150">
-    <ui:NavigationView x:Name="RootNavigation">
-        <ui:NavigationView.MenuItems>
-            <ui:NavigationViewItem x:Name="ApplicationsNavItem" Content="Applications" Click="ApplicationsNavItem_Click"
-                                    IsEnabled="{Binding SyncViewModel.CanNavigateAway}">
-                <ui:NavigationViewItem.Icon>
-                    <ui:SymbolIcon Symbol="Apps24" />
-                </ui:NavigationViewItem.Icon>
-            </ui:NavigationViewItem>
-            <ui:NavigationViewItem x:Name="KeyGroupsNavItem" Content="Key Groups" Click="KeyGroupsNavItem_Click"
-                                    IsEnabled="{Binding SyncViewModel.CanNavigateAway}">
-                <ui:NavigationViewItem.Icon>
-                    <ui:SymbolIcon Symbol="Grid24" />
-                </ui:NavigationViewItem.Icon>
-            </ui:NavigationViewItem>
-            <ui:NavigationViewItem x:Name="SyncNavItem" Content="Sync" Click="SyncNavItem_Click">
-                <ui:NavigationViewItem.Icon>
-                    <ui:SymbolIcon Symbol="ArrowSync24" />
-                </ui:NavigationViewItem.Icon>
-            </ui:NavigationViewItem>
-        </ui:NavigationView.MenuItems>
-    </ui:NavigationView>
+                 Title="{Binding Title}" Height="800" Width="1300" MinHeight="560" MinWidth="880"
+                 WindowStartupLocation="CenterScreen"
+                 Background="{StaticResource AppBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Gero Imperium">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Settings24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="236" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="{StaticResource SidebarGradientBrush}">
+                <DockPanel LastChildFill="False">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,28,0,24" HorizontalAlignment="Center">
+                        <Border Width="72" Height="72" CornerRadius="16" Background="{StaticResource LogoGradientBrush}">
+                            <ui:SymbolIcon Symbol="Settings24" FontSize="30" Foreground="#241705"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Text="Gero Imperium" FontWeight="Bold" FontSize="16" Foreground="White"
+                                   Margin="0,10,0,0" HorizontalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel DockPanel.Dock="Top" Margin="12,8,12,12">
+                        <RadioButton x:Name="ApplicationsNavItem" Style="{StaticResource NavItemStyle}"
+                                     IsChecked="True" Click="ApplicationsNavItem_Click"
+                                     IsEnabled="{Binding SyncViewModel.CanNavigateAway}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Apps24" Margin="0,0,10,0" />
+                                <TextBlock Text="Applications" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="KeyGroupsNavItem" Style="{StaticResource NavItemStyle}"
+                                     Click="KeyGroupsNavItem_Click"
+                                     IsEnabled="{Binding SyncViewModel.CanNavigateAway}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Grid24" Margin="0,0,10,0" />
+                                <TextBlock Text="Keys" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="SyncNavItem" Style="{StaticResource NavItemStyle}"
+                                     Click="SyncNavItem_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,10,0" />
+                                <TextBlock Text="Sync" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <ContentControl x:Name="PageHost" Grid.Column="1" Background="{StaticResource ContentBackgroundBrush}" />
+        </Grid>
+    </Grid>
 </ui:FluentWindow>

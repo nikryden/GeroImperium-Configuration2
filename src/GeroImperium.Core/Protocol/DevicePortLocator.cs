@@ -13,22 +13,48 @@ public static class DevicePortLocator
     {
         var ports = new List<string>();
 
+        //using var searcher = new ManagementObjectSearcher(
+        //    "SELECT DeviceID, PNPDeviceID FROM Win32_SerialPort");
         using var searcher = new ManagementObjectSearcher(
-            "SELECT DeviceID, PNPDeviceID FROM Win32_SerialPort");
+                    $"SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE Name LIKE '%(COM%' AND PNPDeviceID LIKE '%{DeviceIdentity.PnpDeviceIdFragment}%'");
 
-        foreach (var item in searcher.Get())
+        foreach (ManagementBaseObject entity in searcher.Get())
         {
-            using (item)
-            {
-                var pnpDeviceId = item["PNPDeviceID"] as string ?? string.Empty;
-                if (pnpDeviceId.Contains(DeviceIdentity.PnpDeviceIdFragment, StringComparison.OrdinalIgnoreCase)
-                    && item["DeviceID"] is string deviceId)
-                {
-                    ports.Add(deviceId);
-                }
-            }
+            var searchResult = entity.ToString();
+
+            var name = entity["Name"] as string ?? string.Empty;
+
+            var portName = ExtractComPortName(name);
+            if (portName == null)
+                continue;
+
+            ports.Add(portName);
+
+            //using (item)
+            // {
+            //    //var devid = item.GetPropertyValue("PNPDeviceID");
+            //    //var pnpDeviceId = item["PNPDeviceID"] as string ?? string.Empty;
+            //    //if (pnpDeviceId.Contains(DeviceIdentity.PnpDeviceIdFragment, StringComparison.OrdinalIgnoreCase)
+            //    //    && item["DeviceID"] is string deviceId)
+            //    //{
+            //    //    ports.Add(deviceId);
+            //    //}
+            //}
         }
 
         return ports;
+    }
+
+    private static string? ExtractComPortName(string pnpFriendlyName)
+    {
+        int start = pnpFriendlyName.LastIndexOf("(COM", StringComparison.OrdinalIgnoreCase);
+        if (start < 0)
+            return null;
+
+        int end = pnpFriendlyName.IndexOf(')', start);
+        if (end < 0)
+            return null;
+
+        return pnpFriendlyName.Substring(start + 1, end - start - 1);
     }
 }

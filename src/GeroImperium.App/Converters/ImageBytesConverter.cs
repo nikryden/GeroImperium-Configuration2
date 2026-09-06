@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.IO;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -23,4 +25,16 @@ public static class ImageBytesConverter
         bitmap.Freeze();
         return bitmap;
     }
+}
+
+/// <summary>XAML-bindable wrapper around ImageBytesConverter -- for binding directly to a raw model's
+/// ImageData (e.g. GeroImperium.Core.Models.Application), which has no pre-converted ImagePreview property
+/// (that only exists on the App's own *ItemViewModel/*SlotViewModel wrappers).</summary>
+public sealed class ImageBytesToImageSourceConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => ImageBytesConverter.ToImageSource(value as byte[]);
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
 }

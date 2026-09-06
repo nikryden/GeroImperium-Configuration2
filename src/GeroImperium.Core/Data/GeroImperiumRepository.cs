@@ -5,9 +5,10 @@ namespace GeroImperium.Core.Data;
 
 /// <summary>
 /// CRUD access to the authoring DB for the App's editor pages. Kept as plain ADO.NET over
-/// GeroImperiumDatabase's connection rather than an ORM -- the schema is small and fixed (Schema.cs), and
-/// every write here must stay compatible with the exact column set the device (and the bulk S/D/F path)
-/// expects.
+/// GeroImperiumDatabase's connection rather than an ORM -- the schema is small and fixed (Schema.cs).
+/// Page/order editing UI doesn't exist yet (tracked as doc/plan2.md phase 12.6) -- until then,
+/// AddApplication/AddKeyGroup assign an auto-created default page and a trailing "Order" so the required
+/// device-side columns are always populated.
 /// </summary>
 public sealed class GeroImperiumRepository
 {
@@ -22,12 +23,59 @@ public sealed class GeroImperiumRepository
 
     private static object ToDb(object? value) => value ?? DBNull.Value;
 
+    // ----- Application pages -----
+
+    public List<ApplicationPage> GetApplicationPages()
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = """SELECT Id, "Order", Name, RemoteId FROM ApplicationPages ORDER BY Id;""";
+        using var reader = command.ExecuteReader();
+
+        var results = new List<ApplicationPage>();
+        while (reader.Read())
+        {
+            results.Add(ReadApplicationPage(reader));
+        }
+
+        return results;
+    }
+
+    public ApplicationPage AddApplicationPage(string order, string name)
+    {
+        using var command = Connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO ApplicationPages ("Order", Name) VALUES (@order, @name);
+            SELECT last_insert_rowid();
+            """;
+        command.Parameters.AddWithValue("@order", order);
+        command.Parameters.AddWithValue("@name", name);
+        var id = (long)command.ExecuteScalar()!;
+
+        return new ApplicationPage { Id = id, Order = order, Name = name };
+    }
+
+    /// <summary>Returns the first ApplicationPage, creating one ("1", "Page 1") if none exist yet. Used by
+    /// AddApplication until a real page-management UI exists (doc/plan2.md phase 12.6).</summary>
+    private ApplicationPage EnsureDefaultApplicationPage()
+    {
+        var pages = GetApplicationPages();
+        return pages.Count > 0 ? pages[0] : AddApplicationPage("1", "Page 1");
+    }
+
+    private static ApplicationPage ReadApplicationPage(SqliteDataReader reader) => new()
+    {
+        Id = reader.GetInt64(reader.GetOrdinal("Id")),
+        Order = reader.GetString(reader.GetOrdinal("Order")),
+        Name = reader.GetString(reader.GetOrdinal("Name")),
+        RemoteId = ReadNullableLong(reader, "RemoteId"),
+    };
+
     // ----- Applications -----
 
     public List<Application> GetApplications()
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name, ImageData, ImageDataRgb565, BackgroundColorArgb, SourceImageData FROM Applications ORDER BY Id;";
+        command.CommandText = """SELECT Id, ApplicationPageId, "Order", Name, ImageData, ImageDataRgb565, ImageChangedAtUtc, BackgroundColorArgb, SourceImageData, RemoteId FROM Applications ORDER BY Id;""";
         using var reader = command.ExecuteReader();
 
         var results = new List<Application>();
@@ -36,11 +84,15 @@ public sealed class GeroImperiumRepository
             results.Add(new Application
             {
                 Id = reader.GetInt64(reader.GetOrdinal("Id")),
+                ApplicationPageId = reader.GetInt64(reader.GetOrdinal("ApplicationPageId")),
+                Order = reader.GetString(reader.GetOrdinal("Order")),
                 Name = reader.GetString(reader.GetOrdinal("Name")),
                 ImageData = ReadNullableBlob(reader, "ImageData"),
                 ImageDataRgb565 = ReadNullableBlob(reader, "ImageDataRgb565"),
+                ImageChangedAtUtc = ReadNullableDateTimeUtc(reader, "ImageChangedAtUtc"),
                 BackgroundColorArgb = ReadNullableInt(reader, "BackgroundColorArgb"),
                 SourceImageData = ReadNullableBlob(reader, "SourceImageData"),
+                RemoteId = ReadNullableLong(reader, "RemoteId"),
             });
         }
 
@@ -49,15 +101,24 @@ public sealed class GeroImperiumRepository
 
     public Application AddApplication(string name)
     {
+        var page = EnsureDefaultApplicationPage();
+
+        using var countCommand = Connection.CreateCommand();
+        countCommand.CommandText = "SELECT COUNT(*) FROM Applications WHERE ApplicationPageId = @pageId;";
+        countCommand.Parameters.AddWithValue("@pageId", page.Id);
+        var order = ((long)countCommand.ExecuteScalar()! + 1).ToString();
+
         using var command = Connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO Applications (Name) VALUES (@name);
+            INSERT INTO Applications (ApplicationPageId, "Order", Name) VALUES (@pageId, @order, @name);
             SELECT last_insert_rowid();
             """;
+        command.Parameters.AddWithValue("@pageId", page.Id);
+        command.Parameters.AddWithValue("@order", order);
         command.Parameters.AddWithValue("@name", name);
         var id = (long)command.ExecuteScalar()!;
 
-        return new Application { Id = id, Name = name };
+        return new Application { Id = id, ApplicationPageId = page.Id, Order = order, Name = name };
     }
 
     public void UpdateApplication(Application application)
@@ -65,14 +126,20 @@ public sealed class GeroImperiumRepository
         using var command = Connection.CreateCommand();
         command.CommandText = """
             UPDATE Applications
-            SET Name = @name, ImageData = @imageData, ImageDataRgb565 = @imageRgb565, BackgroundColorArgb = @bg, SourceImageData = @source
+            SET ApplicationPageId = @pageId, "Order" = @order, Name = @name, ImageData = @imageData,
+                ImageDataRgb565 = @imageRgb565, ImageChangedAtUtc = @imageChangedAt, BackgroundColorArgb = @bg,
+                SourceImageData = @source, RemoteId = @remoteId
             WHERE Id = @id;
             """;
+        command.Parameters.AddWithValue("@pageId", application.ApplicationPageId);
+        command.Parameters.AddWithValue("@order", application.Order);
         command.Parameters.AddWithValue("@name", application.Name);
         command.Parameters.AddWithValue("@imageData", ToDb(application.ImageData));
         command.Parameters.AddWithValue("@imageRgb565", ToDb(application.ImageDataRgb565));
+        command.Parameters.AddWithValue("@imageChangedAt", ToDb(DateTimeToDb(application.ImageChangedAtUtc)));
         command.Parameters.AddWithValue("@bg", ToDb(application.BackgroundColorArgb));
         command.Parameters.AddWithValue("@source", ToDb(application.SourceImageData));
+        command.Parameters.AddWithValue("@remoteId", ToDb(application.RemoteId));
         command.Parameters.AddWithValue("@id", application.Id);
         command.ExecuteNonQuery();
     }
@@ -115,7 +182,7 @@ public sealed class GeroImperiumRepository
     public List<KeyGroup> GetKeyGroups(long applicationId)
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = "SELECT Id, ApplicationId, Name FROM KeyGroups WHERE ApplicationId = @appId ORDER BY Id;";
+        command.CommandText = """SELECT Id, ApplicationId, "Order", Name, RemoteId FROM KeyGroups WHERE ApplicationId = @appId ORDER BY CAST("Order" AS INTEGER), Id;""";
         command.Parameters.AddWithValue("@appId", applicationId);
         using var reader = command.ExecuteReader();
 
@@ -126,7 +193,9 @@ public sealed class GeroImperiumRepository
             {
                 Id = reader.GetInt64(reader.GetOrdinal("Id")),
                 ApplicationId = reader.GetInt64(reader.GetOrdinal("ApplicationId")),
+                Order = reader.GetString(reader.GetOrdinal("Order")),
                 Name = reader.GetString(reader.GetOrdinal("Name")),
+                RemoteId = ReadNullableLong(reader, "RemoteId"),
             });
         }
 
@@ -139,14 +208,24 @@ public sealed class GeroImperiumRepository
         using var transaction = Connection.BeginTransaction();
 
         long groupId;
+        string order;
+        using (var countCommand = Connection.CreateCommand())
+        {
+            countCommand.Transaction = transaction;
+            countCommand.CommandText = "SELECT COUNT(*) FROM KeyGroups WHERE ApplicationId = @appId;";
+            countCommand.Parameters.AddWithValue("@appId", applicationId);
+            order = ((long)countCommand.ExecuteScalar()! + 1).ToString();
+        }
+
         using (var insertGroup = Connection.CreateCommand())
         {
             insertGroup.Transaction = transaction;
             insertGroup.CommandText = """
-                INSERT INTO KeyGroups (ApplicationId, Name) VALUES (@appId, @name);
+                INSERT INTO KeyGroups (ApplicationId, "Order", Name) VALUES (@appId, @order, @name);
                 SELECT last_insert_rowid();
                 """;
             insertGroup.Parameters.AddWithValue("@appId", applicationId);
+            insertGroup.Parameters.AddWithValue("@order", order);
             insertGroup.Parameters.AddWithValue("@name", name);
             groupId = (long)insertGroup.ExecuteScalar()!;
         }
@@ -163,14 +242,16 @@ public sealed class GeroImperiumRepository
 
         transaction.Commit();
 
-        return new KeyGroup { Id = groupId, ApplicationId = applicationId, Name = name };
+        return new KeyGroup { Id = groupId, ApplicationId = applicationId, Order = order, Name = name };
     }
 
     public void UpdateKeyGroup(KeyGroup group)
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = "UPDATE KeyGroups SET Name = @name WHERE Id = @id;";
+        command.CommandText = """UPDATE KeyGroups SET "Order" = @order, Name = @name, RemoteId = @remoteId WHERE Id = @id;""";
+        command.Parameters.AddWithValue("@order", group.Order);
         command.Parameters.AddWithValue("@name", group.Name);
+        command.Parameters.AddWithValue("@remoteId", ToDb(group.RemoteId));
         command.Parameters.AddWithValue("@id", group.Id);
         command.ExecuteNonQuery();
     }
@@ -205,7 +286,7 @@ public sealed class GeroImperiumRepository
     public List<GeroImperiumKey> GetKeys(long keyGroupId)
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = "SELECT Id, KeyGroupId, Position, ImageData, ImageDataRgb565, KeyActionId, BackgroundColorArgb, SourceImageData FROM GeroImperiumKeys WHERE KeyGroupId = @groupId ORDER BY Position;";
+        command.CommandText = "SELECT Id, KeyGroupId, Position, ImageData, ImageDataRgb565, ImageChangedAtUtc, KeyActionId, BackgroundColorArgb, SourceImageData, RemoteId FROM GeroImperiumKeys WHERE KeyGroupId = @groupId ORDER BY Position;";
         command.Parameters.AddWithValue("@groupId", keyGroupId);
         using var reader = command.ExecuteReader();
 
@@ -219,9 +300,11 @@ public sealed class GeroImperiumRepository
                 Position = reader.GetInt32(reader.GetOrdinal("Position")),
                 ImageData = ReadNullableBlob(reader, "ImageData"),
                 ImageDataRgb565 = ReadNullableBlob(reader, "ImageDataRgb565"),
+                ImageChangedAtUtc = ReadNullableDateTimeUtc(reader, "ImageChangedAtUtc"),
                 KeyActionId = ReadNullableLong(reader, "KeyActionId"),
                 BackgroundColorArgb = ReadNullableInt(reader, "BackgroundColorArgb"),
                 SourceImageData = ReadNullableBlob(reader, "SourceImageData"),
+                RemoteId = ReadNullableLong(reader, "RemoteId"),
             });
         }
 
@@ -233,14 +316,17 @@ public sealed class GeroImperiumRepository
         using var command = Connection.CreateCommand();
         command.CommandText = """
             UPDATE GeroImperiumKeys
-            SET ImageData = @imageData, ImageDataRgb565 = @imageRgb565, KeyActionId = @keyActionId, BackgroundColorArgb = @bg, SourceImageData = @source
+            SET ImageData = @imageData, ImageDataRgb565 = @imageRgb565, ImageChangedAtUtc = @imageChangedAt,
+                KeyActionId = @keyActionId, BackgroundColorArgb = @bg, SourceImageData = @source, RemoteId = @remoteId
             WHERE Id = @id;
             """;
         command.Parameters.AddWithValue("@imageData", ToDb(key.ImageData));
         command.Parameters.AddWithValue("@imageRgb565", ToDb(key.ImageDataRgb565));
+        command.Parameters.AddWithValue("@imageChangedAt", ToDb(DateTimeToDb(key.ImageChangedAtUtc)));
         command.Parameters.AddWithValue("@keyActionId", ToDb(key.KeyActionId));
         command.Parameters.AddWithValue("@bg", ToDb(key.BackgroundColorArgb));
         command.Parameters.AddWithValue("@source", ToDb(key.SourceImageData));
+        command.Parameters.AddWithValue("@remoteId", ToDb(key.RemoteId));
         command.Parameters.AddWithValue("@id", key.Id);
         command.ExecuteNonQuery();
     }
@@ -250,7 +336,7 @@ public sealed class GeroImperiumRepository
     public KeyAction? GetKeyAction(long id)
     {
         using var command = Connection.CreateCommand();
-        command.CommandText = "SELECT Id, ShortcutKey, CtrlModifier, AltModifier, ShiftModifier, WinModifier, ActionType, LaunchPath, ScriptId FROM KeyActions WHERE Id = @id;";
+        command.CommandText = "SELECT Id, Type, TextContent, ActionType, LaunchPath, ScriptId, RemoteId FROM KeyActions WHERE Id = @id;";
         command.Parameters.AddWithValue("@id", id);
         using var reader = command.ExecuteReader();
 
@@ -259,26 +345,23 @@ public sealed class GeroImperiumRepository
 
     /// <summary>
     /// Reuses an existing KeyActions row matching every field rather than inserting a duplicate -- mirrors
-    /// the device's own dedup behavior for 'T' (see pc_app_integration.md) so the authoring DB doesn't
-    /// accumulate near-identical rows across edits.
+    /// the device's own dedup behavior for the old 'T' command (see pc_app_integration.md) so the authoring
+    /// DB doesn't accumulate near-identical rows across edits.
     /// </summary>
-    public KeyAction UpsertAction(ActionType actionType, string? shortcutKey, bool ctrl, bool shift, bool alt, bool win, string? launchPath, long? scriptId)
+    public KeyAction UpsertAction(ActionType actionType, HidActionKind type, string? textContent, string? launchPath, long? scriptId)
     {
         using (var find = Connection.CreateCommand())
         {
             find.CommandText = """
                 SELECT Id FROM KeyActions
                 WHERE ActionType = @actionType
-                  AND ShortcutKey IS @shortcutKey
-                  AND CtrlModifier = @ctrl
-                  AND ShiftModifier = @shift
-                  AND AltModifier = @alt
-                  AND WinModifier = @win
+                  AND Type = @type
+                  AND TextContent IS @textContent
                   AND LaunchPath IS @launchPath
                   AND ScriptId IS @scriptId
                 LIMIT 1;
                 """;
-            AddActionParameters(find, actionType, shortcutKey, ctrl, shift, alt, win, launchPath, scriptId);
+            AddActionParameters(find, actionType, type, textContent, launchPath, scriptId);
 
             if (find.ExecuteScalar() is long existingId)
             {
@@ -288,35 +371,29 @@ public sealed class GeroImperiumRepository
 
         using var insert = Connection.CreateCommand();
         insert.CommandText = """
-            INSERT INTO KeyActions (ShortcutKey, CtrlModifier, AltModifier, ShiftModifier, WinModifier, ActionType, LaunchPath, ScriptId)
-            VALUES (@shortcutKey, @ctrl, @alt, @shift, @win, @actionType, @launchPath, @scriptId);
+            INSERT INTO KeyActions (Type, TextContent, ActionType, LaunchPath, ScriptId)
+            VALUES (@type, @textContent, @actionType, @launchPath, @scriptId);
             SELECT last_insert_rowid();
             """;
-        AddActionParameters(insert, actionType, shortcutKey, ctrl, shift, alt, win, launchPath, scriptId);
+        AddActionParameters(insert, actionType, type, textContent, launchPath, scriptId);
         var id = (long)insert.ExecuteScalar()!;
 
         return new KeyAction
         {
             Id = id,
+            Type = type,
+            TextContent = textContent,
             ActionType = actionType,
-            ShortcutKey = shortcutKey,
-            CtrlModifier = ctrl,
-            ShiftModifier = shift,
-            AltModifier = alt,
-            WinModifier = win,
             LaunchPath = launchPath,
             ScriptId = scriptId,
         };
     }
 
-    private static void AddActionParameters(SqliteCommand command, ActionType actionType, string? shortcutKey, bool ctrl, bool shift, bool alt, bool win, string? launchPath, long? scriptId)
+    private static void AddActionParameters(SqliteCommand command, ActionType actionType, HidActionKind type, string? textContent, string? launchPath, long? scriptId)
     {
         command.Parameters.AddWithValue("@actionType", (int)actionType);
-        command.Parameters.AddWithValue("@shortcutKey", ToDb(shortcutKey));
-        command.Parameters.AddWithValue("@ctrl", ctrl);
-        command.Parameters.AddWithValue("@shift", shift);
-        command.Parameters.AddWithValue("@alt", alt);
-        command.Parameters.AddWithValue("@win", win);
+        command.Parameters.AddWithValue("@type", (int)type);
+        command.Parameters.AddWithValue("@textContent", ToDb(textContent));
         command.Parameters.AddWithValue("@launchPath", ToDb(launchPath));
         command.Parameters.AddWithValue("@scriptId", ToDb(scriptId));
     }
@@ -324,14 +401,12 @@ public sealed class GeroImperiumRepository
     private static KeyAction ReadKeyAction(SqliteDataReader reader) => new()
     {
         Id = reader.GetInt64(reader.GetOrdinal("Id")),
-        ShortcutKey = reader.IsDBNull(reader.GetOrdinal("ShortcutKey")) ? null : reader.GetString(reader.GetOrdinal("ShortcutKey")),
-        CtrlModifier = reader.GetBoolean(reader.GetOrdinal("CtrlModifier")),
-        AltModifier = reader.GetBoolean(reader.GetOrdinal("AltModifier")),
-        ShiftModifier = reader.GetBoolean(reader.GetOrdinal("ShiftModifier")),
-        WinModifier = reader.GetBoolean(reader.GetOrdinal("WinModifier")),
+        Type = (HidActionKind)reader.GetInt32(reader.GetOrdinal("Type")),
+        TextContent = reader.IsDBNull(reader.GetOrdinal("TextContent")) ? null : reader.GetString(reader.GetOrdinal("TextContent")),
         ActionType = (ActionType)reader.GetInt32(reader.GetOrdinal("ActionType")),
         LaunchPath = reader.IsDBNull(reader.GetOrdinal("LaunchPath")) ? null : reader.GetString(reader.GetOrdinal("LaunchPath")),
         ScriptId = ReadNullableLong(reader, "ScriptId"),
+        RemoteId = ReadNullableLong(reader, "RemoteId"),
     };
 
     private static byte[]? ReadNullableBlob(SqliteDataReader reader, string column)
@@ -351,4 +426,15 @@ public sealed class GeroImperiumRepository
         var ordinal = reader.GetOrdinal(column);
         return reader.IsDBNull(ordinal) ? null : reader.GetInt64(ordinal);
     }
+
+    /// <summary>ImageChangedAtUtc is stored as a round-trip ("o") ISO-8601 string -- see DateTimeToDb.</summary>
+    private static DateTime? ReadNullableDateTimeUtc(SqliteDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal)
+            ? null
+            : DateTime.Parse(reader.GetString(ordinal), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+    }
+
+    private static string? DateTimeToDb(DateTime? value) => value?.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
 }

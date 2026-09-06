@@ -9,5 +9,5 @@ public static class DeviceIdentity
 {
     public const int VendorId = 0x303A;
     public const int ProductId = 0x8001;
-    public const string PnpDeviceIdFragment = "VID_303A&PID_8001";
+    public const string PnpDeviceIdFragment = "VID_303A&PID_4005";
 }

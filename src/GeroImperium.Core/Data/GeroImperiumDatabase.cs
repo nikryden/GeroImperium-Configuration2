@@ -3,8 +3,8 @@ using Microsoft.Data.Sqlite;
 namespace GeroImperium.Core.Data;
 
 /// <summary>
-/// Opens the authoring SQLite file. Kept schema-identical to the device's DB (see Schema.CreateTablesSql) so
-/// this file can be pushed as-is over the bulk S/D/F path -- no transform step.
+/// Opens the authoring SQLite file (see Schema.CreateTablesSql for its shape and doc/plan2.md for why it's no
+/// longer a byte-for-byte mirror of a device DB file).
 /// </summary>
 public sealed class GeroImperiumDatabase : IDisposable
 {
@@ -24,6 +24,11 @@ public sealed class GeroImperiumDatabase : IDisposable
 
     public void EnsureSchemaCreated()
     {
+        // Upgrades an existing older-shape DB in place first -- CREATE TABLE IF NOT EXISTS below only
+        // creates brand-new tables, it never alters one that already exists (see SchemaMigration's doc
+        // comment). No-ops entirely on a brand-new empty DB.
+        SchemaMigration.Run(_connection);
+
         using var command = _connection.CreateCommand();
         command.CommandText = Schema.CreateTablesSql;
         command.ExecuteNonQuery();
