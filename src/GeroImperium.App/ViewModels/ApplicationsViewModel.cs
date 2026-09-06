@@ -9,6 +9,11 @@ namespace GeroImperium.App.ViewModels;
 
 public sealed partial class ApplicationsViewModel : ObservableObject
 {
+    /// <summary>A page shows up to 6 Applications together (doc/windows_app_api_guide.md: "ApplicationsPage --
+    /// a 'page': up to 6 Applications shown together") -- this is a hard device-side layout limit, not a
+    /// preference, so it's enforced here rather than left to the device to reject/misrender past it.</summary>
+    public const int MaxApplicationsPerPage = 6;
+
     private readonly GeroImperiumRepository _repository;
 
     /// <summary>Every application across every page -- Applications (below) is filtered to SelectedPage from
@@ -24,6 +29,8 @@ public sealed partial class ApplicationsViewModel : ObservableObject
 
     [ObservableProperty]
     private ApplicationItemViewModel? _selectedApplication;
+
+    public string ApplicationCountText => $"{Applications.Count}/{MaxApplicationsPerPage}";
 
     public IRelayCommand AddPageCommand { get; }
     public IRelayCommand DeletePageCommand { get; }
@@ -45,7 +52,7 @@ public sealed partial class ApplicationsViewModel : ObservableObject
         MovePageEarlierCommand = new RelayCommand(() => MovePage(-1), () => CanMovePage(-1));
         MovePageLaterCommand = new RelayCommand(() => MovePage(1), () => CanMovePage(1));
 
-        AddApplicationCommand = new RelayCommand(AddApplication, () => SelectedPage is not null);
+        AddApplicationCommand = new RelayCommand(AddApplication, () => SelectedPage is not null && Applications.Count < MaxApplicationsPerPage);
         DeleteApplicationCommand = new RelayCommand<ApplicationItemViewModel>(DeleteApplication);
         PickImageCommand = new RelayCommand<ApplicationItemViewModel>(PickImage);
         MoveApplicationEarlierCommand = new RelayCommand(() => MoveApplication(-1), () => CanMoveApplication(-1));
@@ -76,9 +83,9 @@ public sealed partial class ApplicationsViewModel : ObservableObject
         }
 
         SelectedApplication = Applications.Count > 0 ? Applications[0] : null;
-        AddApplicationCommand.NotifyCanExecuteChanged();
         DeletePageCommand.NotifyCanExecuteChanged();
         NotifyPageNavigationCommands();
+        NotifyApplicationCountChanged();
     }
 
     partial void OnSelectedApplicationChanged(ApplicationItemViewModel? value)
@@ -147,7 +154,7 @@ public sealed partial class ApplicationsViewModel : ObservableObject
 
     private void AddApplication()
     {
-        if (SelectedPage is not { } page)
+        if (SelectedPage is not { } page || Applications.Count >= MaxApplicationsPerPage)
         {
             return;
         }
@@ -157,6 +164,7 @@ public sealed partial class ApplicationsViewModel : ObservableObject
         _allApplications.Add(item);
         Applications.Add(item);
         SelectedApplication = item;
+        NotifyApplicationCountChanged();
     }
 
     private void DeleteApplication(ApplicationItemViewModel? item)
@@ -174,6 +182,8 @@ public sealed partial class ApplicationsViewModel : ObservableObject
         {
             SelectedApplication = Applications.Count > 0 ? Applications[0] : null;
         }
+
+        NotifyApplicationCountChanged();
     }
 
     private bool CanMoveApplication(int direction)
@@ -241,5 +251,11 @@ public sealed partial class ApplicationsViewModel : ObservableObject
     {
         MoveApplicationEarlierCommand.NotifyCanExecuteChanged();
         MoveApplicationLaterCommand.NotifyCanExecuteChanged();
+    }
+
+    private void NotifyApplicationCountChanged()
+    {
+        OnPropertyChanged(nameof(ApplicationCountText));
+        AddApplicationCommand.NotifyCanExecuteChanged();
     }
 }

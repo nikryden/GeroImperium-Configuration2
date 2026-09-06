@@ -47,15 +47,21 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0" Text="Applications" FontSize="20" FontWeight="Bold"
-                           Foreground="White" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="Applications" FontSize="20" FontWeight="Bold"
+                               Foreground="White" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ApplicationCountText}" FontSize="13" Margin="10,0,0,0"
+                               Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center"
+                               ToolTip="A page shows up to 6 applications together" />
+                </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <ui:Button Content="▲" Width="36" Margin="0,0,4,0" ToolTip="Move application earlier"
                                Command="{Binding MoveApplicationEarlierCommand}" />
                     <ui:Button Content="▼" Width="36" Margin="0,0,16,0" ToolTip="Move application later"
                                Command="{Binding MoveApplicationLaterCommand}" />
-                    <ui:Button Content="+ Add Application" Command="{Binding AddApplicationCommand}" Margin="0,0,8,0" />
+                    <ui:Button Content="+ Add Application" Command="{Binding AddApplicationCommand}" Margin="0,0,8,0"
+                               ToolTip="A page can hold at most 6 applications" />
                     <ui:Button Content="Delete" Appearance="Danger" Command="{Binding DeleteApplicationCommand}"
                                CommandParameter="{Binding SelectedApplication}" />
                 </StackPanel>
