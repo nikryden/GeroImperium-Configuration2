@@ -1,0 +1,27 @@
+<UserControl x:Class="GeroImperium.App.Views.ProvisioningPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:GeroImperium.App.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:ProvisioningViewModel}"
+             mc:Ignorable="d">
+    <StackPanel Margin="16" MaxWidth="480" HorizontalAlignment="Left">
+
+        <TextBlock Text="Pair &amp; Provision" FontWeight="Bold" FontSize="16" Margin="0,0,0,4" />
+        <TextBlock Text="First-run WiFi setup over Bluetooth. Borrows the device's one Bluetooth connection from the Sync Service just for this step, then hands it back automatically."
+                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
+
+        <TextBlock Text="WiFi network name (SSID)" Opacity="0.7" Margin="0,0,0,2" />
+        <ui:TextBox Text="{Binding Ssid, UpdateSourceTrigger=PropertyChanged}"
+                    PlaceholderText="MyNetwork" Margin="0,0,0,8" />
+
+        <TextBlock Text="WiFi password" Opacity="0.7" Margin="0,0,0,2" />
+        <ui:PasswordBox Password="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="Password" Margin="0,0,0,12" />
+
+        <ui:Button Content="Provision" Command="{Binding ProvisionCommand}" HorizontalAlignment="Left" Margin="0,0,0,12" />
+        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Opacity="0.85" />
+    </StackPanel>
+</UserControl>

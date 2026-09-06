@@ -11,4 +11,10 @@ public sealed class ApplicationPage
     public string Order { get; set; } = "1";
     public string Name { get; set; } = string.Empty;
     public long? RemoteId { get; set; }
+
+    /// <summary>True if edited locally since the last successful push -- lets Sync skip an unchanged,
+    /// already-pushed row instead of unconditionally re-sending it (doc/plan2.md's "skip if unchanged" open
+    /// decision). Set by every GeroImperiumRepository.UpdateApplicationPage call; cleared only by
+    /// MarkApplicationPageSynced after a successful push.</summary>
+    public bool Dirty { get; set; } = true;
 }

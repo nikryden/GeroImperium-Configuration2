@@ -1,5 +1,7 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 
 namespace GeroImperium.Core.Http;
@@ -22,14 +24,24 @@ public sealed class GeroImperiumClient : IDisposable
     /// GET /api/status or the BLE WiFi-status characteristic.</param>
     /// <param name="handler">Test seam -- pass a fake HttpMessageHandler to avoid real hardware in unit tests.
     /// Never disposed by this client (the caller owns it); only the HttpClient wrapping it is.</param>
-    /// <param name="timeout">Defaults to 20s -- hardware-confirmed the device can take several seconds to
-    /// answer a large table listing; the stock 100s HttpClient default is fine too, but callers doing a UI
-    /// wait probably want a shorter, explicit bound.</param>
+    /// <param name="timeout">Defaults to 60s -- hardware-confirmed the device can take several seconds to
+    /// answer a large table listing, and writing a full 32768-byte image to on-device storage is slower still
+    /// (hardware-observed a real upload exceeding an earlier 20s default and getting client-side cancelled,
+    /// not a device error). The stock 100s HttpClient default is fine too, but callers doing a UI wait
+    /// probably want a shorter, explicit bound than that.</param>
     public GeroImperiumClient(string deviceIp, HttpMessageHandler? handler = null, TimeSpan? timeout = null)
     {
         _http = handler is null ? new HttpClient() : new HttpClient(handler, disposeHandler: false);
         _http.BaseAddress = new Uri($"http://{deviceIp}/");
-        _http.Timeout = timeout ?? TimeSpan.FromSeconds(20);
+        _http.Timeout = timeout ?? TimeSpan.FromSeconds(60);
+
+        // esp_http_server's keep-alive handling is flaky reusing a connection across requests -- hardware-
+        // observed a POST immediately after a GET (e.g. Sync's first row-create right after ConnectAsync's
+        // GET /api/status) failing with a device-side "Missing or oversize body" on a body only tens of bytes
+        // long, which rules out an actual size problem. Forcing "Connection: close" makes every call open a
+        // fresh TCP connection instead of pipelining onto whatever socket state the device's single-threaded
+        // httpd was left in by the previous request.
+        _http.DefaultRequestHeaders.ConnectionClose = true;
     }
 
     public Task<DeviceStatus> GetStatusAsync(CancellationToken ct = default) =>
@@ -72,7 +84,7 @@ public sealed class GeroImperiumClient : IDisposable
     public Task<T> CreateAsync<T>(string table, object body, CancellationToken ct = default) =>
         SendAsync(async () =>
         {
-            using var response = await _http.PostAsJsonAsync($"api/{table}", body, JsonOptions, ct);
+            using var response = await _http.PostAsync($"api/{table}", CreateJsonContent(body), ct);
             await EnsureSuccessAsync(response, ct);
             return (await response.Content.ReadFromJsonAsync<T>(JsonOptions, ct))!;
         });
@@ -81,10 +93,25 @@ public sealed class GeroImperiumClient : IDisposable
     public Task UpdateAsync(string table, long id, object partialBody, CancellationToken ct = default) =>
         SendAsync(async () =>
         {
-            using var response = await _http.PutAsJsonAsync($"api/{table}/{id}", partialBody, JsonOptions, ct);
+            using var response = await _http.PutAsync($"api/{table}/{id}", CreateJsonContent(partialBody), ct);
             await EnsureSuccessAsync(response, ct);
             return true;
         });
+
+    /// <summary>Builds the JSON body ourselves with a bare "application/json" Content-Type -- deliberately not
+    /// PostAsJsonAsync/PutAsJsonAsync's JsonContent, which appends "; charset=utf-8". Hardware-observed: every
+    /// create/update failed with the device's generic "Missing or oversized body" 400 even for a payload only
+    /// tens of bytes long (ruling out an actual size problem) and even after forcing a fresh TCP connection per
+    /// request (ruling out a keep-alive/socket-state problem) -- a minimal embedded HTTP server doing an exact
+    /// string match on Content-Type rather than parsing the media-type header is a known-common way for the
+    /// appended charset parameter to derail request parsing before the handler ever reads the body.</summary>
+    private static StringContent CreateJsonContent(object body)
+    {
+        var json = JsonSerializer.Serialize(body, body.GetType(), JsonOptions);
+        var content = new StringContent(json, Encoding.UTF8);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        return content;
+    }
 
     /// <summary>404 (already gone) is treated as success -- deleting an already-deleted row achieves the
     /// caller's goal either way.</summary>
@@ -132,6 +159,18 @@ public sealed class GeroImperiumClient : IDisposable
 
             await EnsureSuccessAsync(response, ct);
             return await response.Content.ReadAsByteArrayAsync(ct);
+        });
+
+    /// <summary>POSTs api/restart with no body to reboot the device. Callers should pass a short-lived
+    /// CancellationToken rather than relying on this client's full request timeout -- the device may cut the
+    /// connection the instant it starts rebooting, before ever sending a response, so a timeout/connection-drop
+    /// here is the expected shape of a successful reboot, not necessarily a failure.</summary>
+    public Task RestartAsync(CancellationToken ct = default) =>
+        SendAsync(async () =>
+        {
+            using var response = await _http.PostAsync("api/restart", null, ct);
+            await EnsureSuccessAsync(response, ct);
+            return true;
         });
 
     private async Task<T> SendAsync<T>(Func<Task<T>> action)

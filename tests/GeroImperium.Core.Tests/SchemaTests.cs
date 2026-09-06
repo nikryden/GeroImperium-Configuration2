@@ -13,7 +13,7 @@ public class SchemaTests
     }
 
     [Fact]
-    public void EnsureSchemaCreated_CreatesAllSevenTables()
+    public void EnsureSchemaCreated_CreatesAllEightTables()
     {
         using var db = CreateInMemoryDatabase();
 
@@ -27,7 +27,7 @@ public class SchemaTests
         }
 
         Assert.Equal(
-            new[] { "ApplicationPages", "Applications", "GeneralSettings", "GeroImperiumKeys", "KeyActions", "KeyGroups", "Scripts" },
+            new[] { "ApplicationPages", "Applications", "GeneralSettings", "GeroImperiumKeys", "KeyActions", "KeyGroups", "PendingDeletes", "Scripts" },
             tables);
     }
 

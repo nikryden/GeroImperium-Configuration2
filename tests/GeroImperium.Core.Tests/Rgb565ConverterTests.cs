@@ -73,4 +73,61 @@ public class Rgb565ConverterTests
             }
         }
     }
+
+    [Fact]
+    public void ConvertBack_WrongLength_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => Rgb565Converter.ConvertBack(new byte[100]));
+    }
+
+    [Fact]
+    public void ConvertBack_White_RoundTripsExactly()
+    {
+        // White is the one color losslessly safe through invert-then-truncate regardless of channel bit
+        // depth: 255 inverts to 0, and 0 truncates/expands back to 0 at any bit width.
+        using var original = new Image<Rgba32>(Rgb565Converter.Width, Rgb565Converter.Height, new Rgba32(255, 255, 255));
+
+        var blob = Rgb565Converter.Convert(original);
+        using var roundTripped = Rgb565Converter.ConvertBack(blob);
+
+        roundTripped.ProcessPixelRows(accessor =>
+        {
+            var row = accessor.GetRowSpan(0);
+            Assert.Equal((byte)255, row[0].R);
+            Assert.Equal((byte)255, row[0].G);
+            Assert.Equal((byte)255, row[0].B);
+            Assert.Equal((byte)255, row[0].A);
+        });
+    }
+
+    [Theory]
+    [InlineData((byte)0, (byte)0, (byte)0)]
+    [InlineData((byte)255, (byte)0, (byte)0)]
+    [InlineData((byte)128, (byte)128, (byte)128)]
+    public void ConvertBack_IsStable_ReEncodingProducesTheSameBlob(byte r, byte g, byte b)
+    {
+        // General colors lose precision going through Convert's 5/6-bit truncation (expected -- that's RGB565),
+        // so ConvertBack won't reproduce the exact original pixels. What matters for a pull-from-device round
+        // trip is stability: once quantized, re-encoding the reconstructed image must land on the same grid
+        // point, not drift further -- otherwise a pulled-then-never-edited image would look "changed" forever.
+        using var original = new Image<Rgba32>(Rgb565Converter.Width, Rgb565Converter.Height, new Rgba32(r, g, b));
+        var blob = Rgb565Converter.Convert(original);
+
+        using var roundTripped = Rgb565Converter.ConvertBack(blob);
+        var reEncoded = Rgb565Converter.Convert(roundTripped);
+
+        Assert.Equal(blob, reEncoded);
+    }
+
+    [Fact]
+    public void ConvertBack_ProducesCorrectDimensions()
+    {
+        using var original = new Image<Rgba32>(Rgb565Converter.Width, Rgb565Converter.Height, new Rgba32(10, 20, 30));
+        var blob = Rgb565Converter.Convert(original);
+
+        using var roundTripped = Rgb565Converter.ConvertBack(blob);
+
+        Assert.Equal(Rgb565Converter.Width, roundTripped.Width);
+        Assert.Equal(Rgb565Converter.Height, roundTripped.Height);
+    }
 }

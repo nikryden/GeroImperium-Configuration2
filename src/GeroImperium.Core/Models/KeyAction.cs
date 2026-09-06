@@ -17,4 +17,9 @@ public sealed class KeyAction
     public string? LaunchPath { get; set; }
     public long? ScriptId { get; set; }
     public long? RemoteId { get; set; }
+
+    /// <summary>See ApplicationPage.Dirty's doc comment. In practice always false once RemoteId is set --
+    /// KeyActions are immutable post-creation (UpsertAction dedups instead of mutating), so there's no edit
+    /// path that could flip this back to true after the initial push.</summary>
+    public bool Dirty { get; set; } = true;
 }

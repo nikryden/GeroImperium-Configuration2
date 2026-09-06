@@ -145,4 +145,36 @@ public class ChordSyntaxTests
 
         Assert.NotEmpty(issues);
     }
+
+    [Fact]
+    public void KnownBareKeys_ContainsLettersDigitsFunctionAndNamedKeys()
+    {
+        Assert.Contains("A", ChordSyntax.KnownBareKeys);
+        Assert.Contains("Z", ChordSyntax.KnownBareKeys);
+        Assert.Contains("0", ChordSyntax.KnownBareKeys);
+        Assert.Contains("9", ChordSyntax.KnownBareKeys);
+        Assert.Contains("F1", ChordSyntax.KnownBareKeys);
+        Assert.Contains("F12", ChordSyntax.KnownBareKeys);
+        Assert.Contains("LEFT", ChordSyntax.KnownBareKeys);
+        Assert.Contains("DELETE", ChordSyntax.KnownBareKeys);
+    }
+
+    [Fact]
+    public void KnownBareKeys_ExcludesKeysNotInTheFirmwareGrammar()
+    {
+        // INSERT/PRINTSCREEN/CAPSLOCK aren't in the guide's grammar -- offering them in a UI picker would
+        // build a chord string the device silently drops tokens from at button-press time.
+        Assert.DoesNotContain("INSERT", ChordSyntax.KnownBareKeys);
+        Assert.DoesNotContain("PRINTSCREEN", ChordSyntax.KnownBareKeys);
+        Assert.DoesNotContain("CAPSLOCK", ChordSyntax.KnownBareKeys);
+    }
+
+    [Fact]
+    public void KnownBareKeys_AreAllRecognizedByValidate()
+    {
+        foreach (var key in ChordSyntax.KnownBareKeys)
+        {
+            Assert.Empty(ChordSyntax.Validate(key));
+        }
+    }
 }

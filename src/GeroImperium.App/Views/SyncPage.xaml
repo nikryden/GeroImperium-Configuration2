@@ -21,10 +21,22 @@
         <TextBlock Text="{Binding BleStatusText}" TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
 
         <TextBlock Text="Sync" FontWeight="Bold" FontSize="16" Margin="0,0,0,4" />
-        <TextBlock Text="Pushes every local Application/Key Group/Key/Shortcut to the device over REST -- new rows are created, previously-pushed rows are updated in place. Safe to re-run or interrupt; nothing here is destructive to the device."
+        <TextBlock Text="Pushes changed/new local Applications/Key Groups/Keys/Shortcuts to the device over REST and deletes anything removed locally that was already on the device. Unchanged rows are skipped. Safe to re-run or interrupt; nothing here is destructive to the device."
                    TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,8" />
         <ui:Button Content="Sync Now" Command="{Binding SyncCommand}" HorizontalAlignment="Left" Margin="0,0,0,8" />
         <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" Margin="0,0,0,4" />
-        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+        <TextBlock Text="Maintenance" FontWeight="Bold" FontSize="16" Margin="0,0,0,4" />
+        <TextBlock Text="These replace data instead of merging it. Each asks for confirmation before doing anything."
+                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,8" />
+        <StackPanel Orientation="Horizontal">
+            <ui:Button Content="Full Sync (wipe device + push clean copy)" Command="{Binding FullSyncCommand}" Margin="0,0,8,0" />
+            <ui:Button Content="Pull from Device (backs up local data first)" Command="{Binding PullFromDeviceCommand}" Margin="0,0,8,0" />          
+        </StackPanel >
+        <StackPanel Orientation="Horizontal" Margin="0,10">
+            <ui:Button Content="Backup Local DB..." Command="{Binding BackupNowCommand}" Margin="0,0,8,0" />
+            <ui:Button Content="Restore Backup..." Command="{Binding RestoreBackupCommand}" />
+        </StackPanel>
     </StackPanel>
 </UserControl>

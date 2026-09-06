@@ -1,6 +1,9 @@
+using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using GeroImperium.App.Converters;
 using GeroImperium.Core.Data;
 using GeroImperium.Core.Http;
@@ -30,20 +33,14 @@ public sealed partial class KeySlotViewModel : ObservableObject
     [ObservableProperty]
     private ActionType _actionType;
 
-    [ObservableProperty]
-    private string? _shortcutToken;
+    /// <summary>The chord sequence being edited, one entry per step (see ChordSyntax's step grammar --
+    /// "[ctrl]+k[ctrl]+l" is two steps). Always has at least one entry so there's a row to fill in; a step
+    /// with no key selected compiles to nothing (see PersistAction) rather than being saved.</summary>
+    public ObservableCollection<ChordStepEditorViewModel> ChordSteps { get; } = [];
 
-    [ObservableProperty]
-    private bool _ctrlModifier;
-
-    [ObservableProperty]
-    private bool _shiftModifier;
-
-    [ObservableProperty]
-    private bool _altModifier;
-
-    [ObservableProperty]
-    private bool _winModifier;
+    /// <summary>Human-readable readout of what ChordSteps currently compiles to (e.g. "Ctrl+K, Ctrl+C"), so
+    /// the user can see the sequence they're building without reading raw TextContent syntax.</summary>
+    public string ChordPreview => BuildChordPreview();
 
     [ObservableProperty]
     private string? _launchPath;
@@ -65,17 +62,28 @@ public sealed partial class KeySlotViewModel : ObservableObject
         _actionType = action?.ActionType ?? ActionType.Shortcut;
         _launchPath = action?.LaunchPath;
 
-        // TextContent is a chord-syntax string (see ChordSyntax) -- this editor only exposes a single step
-        // (one key + 4 modifier checkboxes) today, so only the first parsed step round-trips into the UI.
+        // TextContent is a chord-syntax string (see ChordSyntax) -- every parsed step round-trips into its
+        // own ChordStepEditorViewModel so multi-step sequences ("[ctrl]+k[ctrl]+l") are editable, not just
+        // the first step.
         if (action is { Type: HidActionKind.Hid, TextContent.Length: > 0 }
-            && ChordSyntax.TryParse(action.TextContent, out var steps) && steps.Count > 0)
+            && ChordSyntax.TryParse(action.TextContent, out var steps))
         {
-            var step = steps[0];
-            _ctrlModifier = step.Ctrl;
-            _shiftModifier = step.Shift;
-            _altModifier = step.Alt;
-            _winModifier = step.Win;
-            _shortcutToken = step.Keys.Count > 0 ? step.Keys[0] : null;
+            foreach (var step in steps)
+            {
+                ChordSteps.Add(new ChordStepEditorViewModel(OnChordStepChanged)
+                {
+                    Ctrl = step.Ctrl,
+                    Shift = step.Shift,
+                    Alt = step.Alt,
+                    Win = step.Win,
+                    SelectedKey = step.Keys.Count > 0 ? step.Keys[0] : null,
+                });
+            }
+        }
+
+        if (ChordSteps.Count == 0)
+        {
+            ChordSteps.Add(new ChordStepEditorViewModel(OnChordStepChanged));
         }
 
         _isLoading = false;
@@ -106,17 +114,32 @@ public sealed partial class KeySlotViewModel : ObservableObject
         PersistAction();
     }
 
-    partial void OnShortcutTokenChanged(string? value) => PersistAction();
-
-    partial void OnCtrlModifierChanged(bool value) => PersistAction();
-
-    partial void OnShiftModifierChanged(bool value) => PersistAction();
-
-    partial void OnAltModifierChanged(bool value) => PersistAction();
-
-    partial void OnWinModifierChanged(bool value) => PersistAction();
-
     partial void OnLaunchPathChanged(string? value) => PersistAction();
+
+    [RelayCommand]
+    private void AddChordStep() => ChordSteps.Add(new ChordStepEditorViewModel(OnChordStepChanged));
+
+    [RelayCommand]
+    private void RemoveChordStep(ChordStepEditorViewModel? step)
+    {
+        if (step is null || !ChordSteps.Remove(step))
+        {
+            return;
+        }
+
+        if (ChordSteps.Count == 0)
+        {
+            ChordSteps.Add(new ChordStepEditorViewModel(OnChordStepChanged));
+        }
+
+        PersistAction();
+    }
+
+    private void OnChordStepChanged()
+    {
+        OnPropertyChanged(nameof(ChordPreview));
+        PersistAction();
+    }
 
     public void SetImageFromFile(string path)
     {
@@ -145,11 +168,14 @@ public sealed partial class KeySlotViewModel : ObservableObject
             return;
         }
 
+        // Steps with no key selected (a modifier checked but nothing chosen yet, or a freshly-added blank
+        // row) are dropped here rather than saved -- this is what keeps an in-progress/trailing modifier
+        // out of the database.
         string? textContent = null;
-        if (ActionType == ActionType.Shortcut && !string.IsNullOrEmpty(ShortcutToken))
+        if (ActionType == ActionType.Shortcut)
         {
-            var step = new ChordStep(CtrlModifier, ShiftModifier, AltModifier, WinModifier, [ShortcutToken]);
-            textContent = ChordSyntax.Build([step]);
+            var completeSteps = ChordSteps.Where(s => s.HasKey).Select(s => s.ToChordStep()).ToList();
+            textContent = completeSteps.Count > 0 ? ChordSyntax.Build(completeSteps) : null;
         }
 
         var action = _repository.UpsertAction(
@@ -161,5 +187,21 @@ public sealed partial class KeySlotViewModel : ObservableObject
 
         _model.KeyActionId = action.Id;
         _repository.UpdateKey(_model);
+    }
+
+    private string BuildChordPreview()
+    {
+        var stepLabels = ChordSteps.Where(s => s.HasKey).Select(s =>
+        {
+            var parts = new List<string>();
+            if (s.Ctrl) parts.Add("Ctrl");
+            if (s.Shift) parts.Add("Shift");
+            if (s.Alt) parts.Add("Alt");
+            if (s.Win) parts.Add("Win");
+            parts.Add(s.SelectedKey!);
+            return string.Join("+", parts);
+        }).ToList();
+
+        return stepLabels.Count > 0 ? string.Join(", ", stepLabels) : "(no shortcut set)";
     }
 }

@@ -27,6 +27,34 @@ internal static class SchemaMigration
         MigrateGeneralSettings(connection);
         AddColumnIfMissing(connection, "Applications", "ImageChangedAtUtc", "ImageChangedAtUtc", "TEXT");
         AddColumnIfMissing(connection, "GeroImperiumKeys", "ImageChangedAtUtc", "ImageChangedAtUtc", "TEXT");
+        MigrateDirtyTrackingAndTombstones(connection);
+    }
+
+    /// <summary>Adds Dirty (skip-if-unchanged) and LastSyncedImageChangedAtUtc (skip-if-image-unchanged)
+    /// tracking, plus the PendingDeletes tombstone table -- doc/plan2.md's "skip if unchanged" and "tombstone
+    /// tracking for deletes" open decisions. Every row in an existing DB defaults to Dirty = 1 (ADD COLUMN's
+    /// default applies retroactively to existing rows too, not just new ones) -- a one-time "re-push
+    /// everything once more" cost on the first sync after upgrading, since there's no prior record of what was
+    /// actually last pushed; every sync after that correctly skips unchanged rows.</summary>
+    private static void MigrateDirtyTrackingAndTombstones(SqliteConnection connection)
+    {
+        AddColumnIfMissing(connection, "ApplicationPages", "Dirty", "Dirty", "INTEGER NOT NULL DEFAULT 1");
+        AddColumnIfMissing(connection, "Applications", "Dirty", "Dirty", "INTEGER NOT NULL DEFAULT 1");
+        AddColumnIfMissing(connection, "Applications", "LastSyncedImageChangedAtUtc", "LastSyncedImageChangedAtUtc", "TEXT");
+        AddColumnIfMissing(connection, "KeyGroups", "Dirty", "Dirty", "INTEGER NOT NULL DEFAULT 1");
+        AddColumnIfMissing(connection, "KeyActions", "Dirty", "Dirty", "INTEGER NOT NULL DEFAULT 1");
+        AddColumnIfMissing(connection, "GeroImperiumKeys", "Dirty", "Dirty", "INTEGER NOT NULL DEFAULT 1");
+        AddColumnIfMissing(connection, "GeroImperiumKeys", "LastSyncedImageChangedAtUtc", "LastSyncedImageChangedAtUtc", "TEXT");
+
+        using var createTombstones = connection.CreateCommand();
+        createTombstones.CommandText = """
+            CREATE TABLE IF NOT EXISTS PendingDeletes (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TableName TEXT NOT NULL,
+                RemoteId INTEGER NOT NULL
+            );
+            """;
+        createTombstones.ExecuteNonQuery();
     }
 
     /// <summary>Adds the ApplicationPages table (didn't exist pre-migration) plus Applications.ApplicationPageId/

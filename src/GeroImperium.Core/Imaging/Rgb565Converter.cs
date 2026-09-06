@@ -49,4 +49,39 @@ public static class Rgb565Converter
 
         return buffer;
     }
+
+    /// <summary>Inverse of <see cref="Convert"/> -- reconstructs a displayable image from a device-format blob
+    /// (e.g. downloaded via GET .../image for a pull-from-device flow that has no original source image to
+    /// recomposite from). Lossy: the 5/6-bit channels can't recover the original 8-bit precision Convert
+    /// truncated away, but that's inherent to RGB565 and fine for a preview thumbnail.</summary>
+    public static Image<Rgba32> ConvertBack(byte[] blob)
+    {
+        if (blob.Length != BlobSize)
+        {
+            throw new ArgumentException($"Blob must be exactly {BlobSize} bytes, got {blob.Length}.", nameof(blob));
+        }
+
+        var image = new Image<Rgba32>(Width, Height);
+        image.ProcessPixelRows(accessor =>
+        {
+            var offset = 0;
+            for (var y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (var x = 0; x < row.Length; x++)
+                {
+                    ushort packed = (ushort)(blob[offset] | (blob[offset + 1] << 8));
+                    offset += 2;
+
+                    var invB = (byte)(((packed >> 11) & 0x1F) << 3);
+                    var invG = (byte)(((packed >> 5) & 0x3F) << 2);
+                    var invR = (byte)((packed & 0x1F) << 3);
+
+                    row[x] = new Rgba32((byte)(255 - invR), (byte)(255 - invG), (byte)(255 - invB), 255);
+                }
+            }
+        });
+
+        return image;
+    }
 }

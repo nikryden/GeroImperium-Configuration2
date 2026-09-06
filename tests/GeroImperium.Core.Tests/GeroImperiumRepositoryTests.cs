@@ -270,4 +270,162 @@ public class GeroImperiumRepositoryTests : IDisposable
         Assert.Empty(_repository.GetKeyGroups(app.Id));
         Assert.Empty(_repository.GetKeys(group.Id));
     }
+
+    // ----- Dirty tracking (doc/plan2.md's "skip if unchanged") -----
+
+    [Fact]
+    public void NewRows_DefaultToDirtyTrue()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        var app = _repository.AddApplication("App", page.Id);
+        var group = _repository.AddKeyGroup(app.Id, "Group");
+        var action = _repository.UpsertAction(ActionType.Shortcut, HidActionKind.Hid, "a", null, null);
+
+        Assert.True(_repository.GetApplicationPages().Single().Dirty);
+        Assert.True(_repository.GetApplications().Single().Dirty);
+        Assert.True(_repository.GetKeyGroups(app.Id).Single().Dirty);
+        Assert.True(_repository.GetKeys(group.Id)[0].Dirty);
+        Assert.True(_repository.GetKeyAction(action.Id)!.Dirty);
+    }
+
+    [Fact]
+    public void MarkSynced_ClearsDirty_AndUpdateEditPathSetsItAgain()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        var app = _repository.AddApplication("App", page.Id);
+        var group = _repository.AddKeyGroup(app.Id, "Group");
+        var key = _repository.GetKeys(group.Id)[0];
+        var action = _repository.UpsertAction(ActionType.Shortcut, HidActionKind.Hid, "a", null, null);
+
+        _repository.MarkApplicationPageSynced(page.Id, remoteId: 1);
+        _repository.MarkApplicationSynced(app.Id, remoteId: 2, lastSyncedImageChangedAtUtc: null);
+        _repository.MarkKeyGroupSynced(group.Id, remoteId: 3);
+        _repository.MarkKeySynced(key.Id, remoteId: 4, lastSyncedImageChangedAtUtc: null);
+        _repository.MarkKeyActionSynced(action.Id, remoteId: 5);
+
+        Assert.False(_repository.GetApplicationPages().Single().Dirty);
+        Assert.False(_repository.GetApplications().Single().Dirty);
+        Assert.False(_repository.GetKeyGroups(app.Id).Single().Dirty);
+        Assert.False(_repository.GetKeys(group.Id)[0].Dirty);
+        Assert.False(_repository.GetKeyAction(action.Id)!.Dirty);
+
+        // Editing again (not the sync-bookkeeping Mark*Synced path) must re-dirty the row.
+        var reloadedPage = _repository.GetApplicationPages().Single();
+        reloadedPage.Name = "Renamed";
+        _repository.UpdateApplicationPage(reloadedPage);
+        Assert.True(_repository.GetApplicationPages().Single().Dirty);
+    }
+
+    // ----- Tombstones (doc/plan2.md's "tombstone tracking for deletes") -----
+
+    [Fact]
+    public void DeletingARowWithNoRemoteId_RecordsNoTombstone()
+    {
+        var app = _repository.AddApplication("Never synced");
+
+        _repository.DeleteApplication(app.Id);
+
+        Assert.Empty(_repository.GetPendingDeletes());
+    }
+
+    [Fact]
+    public void DeletingASyncedRow_RecordsOneTombstone_EvenWhenItCascadesChildren()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        var app = _repository.AddApplication("App", page.Id);
+        _repository.MarkApplicationSynced(app.Id, remoteId: 42, lastSyncedImageChangedAtUtc: null);
+        var group = _repository.AddKeyGroup(app.Id, "Group"); // never synced -- no RemoteId
+
+        _repository.DeleteApplication(app.Id);
+
+        var tombstone = Assert.Single(_repository.GetPendingDeletes());
+        Assert.Equal("applications", tombstone.TableName);
+        Assert.Equal(42, tombstone.RemoteId);
+    }
+
+    [Fact]
+    public void RemovePendingDelete_RemovesIt()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        _repository.MarkApplicationPageSynced(page.Id, remoteId: 7);
+
+        _repository.DeleteApplicationPage(page.Id);
+        var tombstone = Assert.Single(_repository.GetPendingDeletes());
+
+        _repository.RemovePendingDelete(tombstone.Id);
+
+        Assert.Empty(_repository.GetPendingDeletes());
+    }
+
+    // ----- Full Sync support -----
+
+    [Fact]
+    public void ClearAllRemoteIds_ResetsRemoteIdDirtyAndTombstones()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        var app = _repository.AddApplication("App", page.Id);
+        _repository.MarkApplicationPageSynced(page.Id, remoteId: 1);
+        _repository.MarkApplicationSynced(app.Id, remoteId: 2, lastSyncedImageChangedAtUtc: DateTime.UtcNow);
+        _repository.DeleteApplication(app.Id); // records a tombstone (RemoteId was set)
+
+        _repository.ClearAllRemoteIds();
+
+        var reloadedPage = _repository.GetApplicationPages().Single();
+        Assert.Null(reloadedPage.RemoteId);
+        Assert.True(reloadedPage.Dirty);
+        Assert.Empty(_repository.GetPendingDeletes());
+    }
+
+    // ----- Pull from device -----
+
+    [Fact]
+    public void PullInserts_RoundTripAsAlreadySynced()
+    {
+        var pageId = _repository.InsertPulledApplicationPage(remoteId: 100, order: "1", name: "Pulled Page");
+        var appId = _repository.InsertPulledApplication(remoteId: 200, applicationPageId: pageId, order: "1",
+            name: "Pulled App", imageData: [1, 2, 3], imageDataRgb565: new byte[32768], imageChangedAtUtc: DateTime.UtcNow);
+        var groupId = _repository.InsertPulledKeyGroup(remoteId: 300, applicationId: appId, order: "1", name: "Pulled Group");
+        var actionId = _repository.InsertPulledKeyAction(remoteId: 400, HidActionKind.Hid, "[ctrl]+c");
+        var keyId = _repository.InsertPulledKey(remoteId: 500, keyGroupId: groupId, position: 0, keyActionId: actionId,
+            imageData: null, imageDataRgb565: null, imageChangedAtUtc: null);
+
+        var page = _repository.GetApplicationPages().Single();
+        Assert.Equal(100, page.RemoteId);
+        Assert.False(page.Dirty);
+
+        var app = _repository.GetApplications().Single();
+        Assert.Equal(200, app.RemoteId);
+        Assert.False(app.Dirty);
+        Assert.NotNull(app.LastSyncedImageChangedAtUtc);
+        Assert.Equal(app.ImageChangedAtUtc, app.LastSyncedImageChangedAtUtc);
+
+        var group = _repository.GetKeyGroups(appId).Single();
+        Assert.Equal(300, group.RemoteId);
+
+        var action = _repository.GetKeyAction(actionId)!;
+        Assert.Equal(400, action.RemoteId);
+        Assert.Equal(ActionType.Shortcut, action.ActionType);
+
+        var key = _repository.GetKeys(groupId).Single(k => k.Id == keyId);
+        Assert.Equal(500, key.RemoteId);
+        Assert.Equal(actionId, key.KeyActionId);
+    }
+
+    [Fact]
+    public void ClearAllSyncedDataForPull_RemovesEverySyncedRowAndTombstones()
+    {
+        var page = _repository.AddApplicationPage("1", "Page");
+        var app = _repository.AddApplication("App", page.Id);
+        _repository.AddKeyGroup(app.Id, "Group");
+        _repository.UpsertAction(ActionType.Shortcut, HidActionKind.Hid, "a", null, null);
+        _repository.MarkApplicationSynced(app.Id, remoteId: 1, lastSyncedImageChangedAtUtc: null);
+        _repository.DeleteApplication(app.Id); // leaves a tombstone
+
+        _repository.ClearAllSyncedDataForPull();
+
+        Assert.Empty(_repository.GetApplicationPages());
+        Assert.Empty(_repository.GetApplications());
+        Assert.Empty(_repository.GetKeyActions());
+        Assert.Empty(_repository.GetPendingDeletes());
+    }
 }

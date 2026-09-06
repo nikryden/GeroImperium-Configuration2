@@ -25,4 +25,15 @@ public sealed class Application
     public int? BackgroundColorArgb { get; set; }
     public byte[]? SourceImageData { get; set; }
     public long? RemoteId { get; set; }
+
+    /// <summary>See doc/plan2.md's "skip if unchanged" open decision. True if any field (including the image)
+    /// changed locally since the last successful push; set by every UpdateApplication call, cleared only by
+    /// MarkApplicationSynced.</summary>
+    public bool Dirty { get; set; } = true;
+
+    /// <summary>The ImageChangedAtUtc value as of the last successful image upload -- lets Sync compare
+    /// against the current ImageChangedAtUtc to skip re-uploading an unchanged 32768-byte image (the
+    /// expensive part of a sync, per real hardware timeouts seen re-uploading unconditionally). Null means
+    /// never pushed (or never had an image).</summary>
+    public DateTime? LastSyncedImageChangedAtUtc { get; set; }
 }

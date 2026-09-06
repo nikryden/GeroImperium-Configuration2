@@ -20,4 +20,10 @@ public sealed class GeroImperiumKey
     public int? BackgroundColorArgb { get; set; }
     public byte[]? SourceImageData { get; set; }
     public long? RemoteId { get; set; }
+
+    /// <summary>See Application.Dirty's doc comment -- same convention.</summary>
+    public bool Dirty { get; set; } = true;
+
+    /// <summary>See Application.LastSyncedImageChangedAtUtc's doc comment -- same convention.</summary>
+    public DateTime? LastSyncedImageChangedAtUtc { get; set; }
 }

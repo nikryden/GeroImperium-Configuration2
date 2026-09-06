@@ -33,6 +33,19 @@ public static class ImagePipeline
         return (pngStream.ToArray(), Rgb565Converter.Convert(composed));
     }
 
+    /// <summary>For pull-from-device: turns a downloaded device-format blob into a displayable PNG. There's no
+    /// original source image to recomposite from later (the device only ever hands back the already-flattened
+    /// wire format), so a pulled row's SourceImageData stays null -- a later background-color change on a
+    /// pulled row requires picking a new source image, same as any other app-only column the device never
+    /// round-trips.</summary>
+    public static byte[] ConvertRgb565ToPreviewPng(byte[] rgb565)
+    {
+        using var image = Rgb565Converter.ConvertBack(rgb565);
+        using var pngStream = new MemoryStream();
+        image.SaveAsPng(pngStream);
+        return pngStream.ToArray();
+    }
+
     private static Image<Rgba32> DecodeAndCompose(byte[] imageBytes, Rgba32 backgroundColor)
     {
         using var source = IsSvg(imageBytes)

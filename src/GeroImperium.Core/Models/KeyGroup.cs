@@ -11,4 +11,7 @@ public sealed class KeyGroup
     public string Order { get; set; } = "1";
     public string Name { get; set; } = string.Empty;
     public long? RemoteId { get; set; }
+
+    /// <summary>See ApplicationPage.Dirty's doc comment -- same convention.</summary>
+    public bool Dirty { get; set; } = true;
 }

@@ -1,6 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <Content Include="GeroImperium_transp.png" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\GeroImperium.Core\GeroImperium.Core.csproj" />
   </ItemGroup>
 
@@ -15,6 +19,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>GeroImperium.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

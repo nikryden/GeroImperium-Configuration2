@@ -63,6 +63,13 @@
                                 <TextBlock Text="Sync" VerticalAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
+                        <RadioButton x:Name="ProvisioningNavItem" Style="{StaticResource NavItemStyle}"
+                                     Click="ProvisioningNavItem_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="BluetoothConnected24" Margin="0,0,10,0" />
+                                <TextBlock Text="Pair Device" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
                     </StackPanel>
                 </DockPanel>
             </Border>

@@ -231,6 +231,38 @@ public class GeroImperiumClientTests
     }
 
     [Fact]
+    public async Task RestartAsync_PostsToRestartEndpointWithNoBody()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            captured = req;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+        using var client = CreateClient(handler);
+
+        await client.RestartAsync();
+
+        Assert.Equal(HttpMethod.Post, captured!.Method);
+        Assert.Equal("http://192.168.1.22/api/restart", captured.RequestUri!.ToString());
+        Assert.Null(captured.Content);
+    }
+
+    [Fact]
+    public async Task RestartAsync_NonSuccessResponse_ThrowsApiException()
+    {
+        var handler = new FakeHttpMessageHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+        {
+            Content = new StringContent("No such endpoint"),
+        }));
+        using var client = CreateClient(handler);
+
+        var ex = await Assert.ThrowsAsync<GeroImperiumApiException>(() => client.RestartAsync());
+
+        Assert.Equal(HttpStatusCode.NotFound, ex.StatusCode);
+    }
+
+    [Fact]
     public async Task Requests_AreSerializedNeverConcurrent()
     {
         var maxConcurrent = 0;

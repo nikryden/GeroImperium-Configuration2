@@ -15,8 +15,12 @@ namespace GeroImperium.Core.Data;
 /// Applications), Keys (references KeyGroups and KeyActions), then GeneralSettings.
 /// Applications and GeroImperiumKeys (the two tables with image columns) carry ImageChangedAtUtc -- an
 /// ISO-8601 UTC timestamp stamped whenever ImageData/ImageDataRgb565 is (re)written (see
-/// ApplicationItemViewModel/KeySlotViewModel's ReconvertImage). The sync path compares this against the
-/// timestamp of the image it last pushed so an unchanged image never needs to be re-sent to the device.
+/// ApplicationItemViewModel/KeySlotViewModel's ReconvertImage) -- and LastSyncedImageChangedAtUtc, the value
+/// as of the last successful image push; Sync compares the two to skip re-uploading an unchanged 32768-byte
+/// image. Every synced table also carries Dirty (default 1, so a brand-new row always pushes at least once);
+/// Sync skips a PUT entirely when RemoteId is set and Dirty is 0. PendingDeletes holds tombstones for
+/// already-pushed rows deleted locally (see Models.PendingDelete's doc comment) -- Sync issues their DELETE
+/// first, before any create/update pass.
 /// </summary>
 internal static class Schema
 {
@@ -25,7 +29,8 @@ internal static class Schema
             Id INTEGER PRIMARY KEY AUTOINCREMENT,
             "Order" TEXT NOT NULL DEFAULT '1',
             Name TEXT NOT NULL DEFAULT '',
-            RemoteId INTEGER
+            RemoteId INTEGER,
+            Dirty INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS Scripts (
@@ -45,7 +50,9 @@ internal static class Schema
             ImageChangedAtUtc TEXT,
             BackgroundColorArgb INTEGER,
             SourceImageData BLOB,
-            RemoteId INTEGER
+            RemoteId INTEGER,
+            Dirty INTEGER NOT NULL DEFAULT 1,
+            LastSyncedImageChangedAtUtc TEXT
         );
 
         CREATE TABLE IF NOT EXISTS KeyActions (
@@ -55,7 +62,8 @@ internal static class Schema
             ActionType INTEGER NOT NULL DEFAULT 0,
             LaunchPath TEXT,
             ScriptId INTEGER REFERENCES Scripts(Id),
-            RemoteId INTEGER
+            RemoteId INTEGER,
+            Dirty INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS KeyGroups (
@@ -63,7 +71,8 @@ internal static class Schema
             ApplicationId INTEGER NOT NULL REFERENCES Applications(Id),
             "Order" TEXT NOT NULL DEFAULT '1',
             Name TEXT NOT NULL DEFAULT '',
-            RemoteId INTEGER
+            RemoteId INTEGER,
+            Dirty INTEGER NOT NULL DEFAULT 1
         );
 
         CREATE TABLE IF NOT EXISTS GeroImperiumKeys (
@@ -76,7 +85,15 @@ internal static class Schema
             KeyActionId INTEGER REFERENCES KeyActions(Id),
             BackgroundColorArgb INTEGER,
             SourceImageData BLOB,
-            RemoteId INTEGER
+            RemoteId INTEGER,
+            Dirty INTEGER NOT NULL DEFAULT 1,
+            LastSyncedImageChangedAtUtc TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS PendingDeletes (
+            Id INTEGER PRIMARY KEY AUTOINCREMENT,
+            TableName TEXT NOT NULL,
+            RemoteId INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS GeneralSettings (

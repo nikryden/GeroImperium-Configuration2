@@ -10,6 +10,7 @@ public partial class MainWindow : FluentWindow
     private readonly ApplicationsPage _applicationsPage;
     private readonly KeyGroupsPage _keyGroupsPage;
     private readonly SyncPage _syncPage;
+    private readonly ProvisioningPage _provisioningPage;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -20,6 +21,7 @@ public partial class MainWindow : FluentWindow
         _applicationsPage = new ApplicationsPage(viewModel.ApplicationsViewModel);
         _keyGroupsPage = new KeyGroupsPage(viewModel.KeyGroupsViewModel);
         _syncPage = new SyncPage(viewModel.SyncViewModel);
+        _provisioningPage = new ProvisioningPage(viewModel.ProvisioningViewModel);
 
         PageHost.Content = _applicationsPage;
     }
@@ -32,4 +34,7 @@ public partial class MainWindow : FluentWindow
 
     private void SyncNavItem_Click(object sender, RoutedEventArgs e)
         => PageHost.Content = _syncPage;
+
+    private void ProvisioningNavItem_Click(object sender, RoutedEventArgs e)
+        => PageHost.Content = _provisioningPage;
 }

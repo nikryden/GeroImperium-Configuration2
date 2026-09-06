@@ -30,6 +30,34 @@ public static class ChordSyntax
 
     private static readonly Regex FunctionKeyPattern = new(@"^F([1-9]|1[0-2])$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /// <summary>Every bare-key token the firmware's grammar recognizes (letters, digits, F1-F12, then
+    /// NamedKeys), for UI key pickers to search/list against -- deliberately excludes keys like INSERT that
+    /// aren't in the guide's grammar (see IsKnownBareKey), so a picker built from this can't offer a key the
+    /// device would silently drop.</summary>
+    public static IReadOnlyList<string> KnownBareKeys { get; } = BuildKnownBareKeys();
+
+    private static List<string> BuildKnownBareKeys()
+    {
+        var keys = new List<string>();
+        for (var c = 'A'; c <= 'Z'; c++)
+        {
+            keys.Add(c.ToString());
+        }
+
+        for (var d = 0; d <= 9; d++)
+        {
+            keys.Add(d.ToString());
+        }
+
+        for (var f = 1; f <= 12; f++)
+        {
+            keys.Add($"F{f}");
+        }
+
+        keys.AddRange(NamedKeys);
+        return keys;
+    }
+
     /// <summary>Compiles structured steps into a TextContent string. Modifiers are always emitted before
     /// keys within a step (order among same-step tokens doesn't matter to the firmware, only step
     /// boundaries do).</summary>

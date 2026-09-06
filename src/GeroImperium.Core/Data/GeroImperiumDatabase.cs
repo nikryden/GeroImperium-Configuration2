@@ -34,5 +34,27 @@ public sealed class GeroImperiumDatabase : IDisposable
         command.ExecuteNonQuery();
     }
 
+    /// <summary>Live online backup via SQLite's own backup API -- works even though this connection stays
+    /// open the whole time (unlike a plain File.Copy, which Windows can refuse against an open, locked file).
+    /// Used before any destructive local operation (Pull from Device) so there's always a way back.</summary>
+    public void BackupTo(string destinationPath)
+    {
+        using var destination = new SqliteConnection($"Data Source={destinationPath}");
+        destination.Open();
+        _connection.BackupDatabase(destination);
+    }
+
+    /// <summary>Live online restore -- copies a backup file's pages into this already-open connection page by
+    /// page, so the running app doesn't need to close/reopen its database file. Callers still need to reload
+    /// any in-memory state (ViewModels loaded their collections once at construction) -- simplest correct fix
+    /// today is telling the user to restart the app, rather than building live-reload plumbing that doesn't
+    /// exist anywhere else in this codebase either.</summary>
+    public void RestoreFrom(string backupFilePath)
+    {
+        using var source = new SqliteConnection($"Data Source={backupFilePath};Mode=ReadOnly");
+        source.Open();
+        source.BackupDatabase(_connection);
+    }
+
     public void Dispose() => _connection.Dispose();
 }
